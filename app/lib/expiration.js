@@ -7,6 +7,7 @@
 // pas de piège UTC. La comparaison lexicographique de chaînes ISO zero-paddées
 // équivaut à une comparaison de dates ('2026-03-09' < '2026-03-10').
 
+import { aujourdhuiParis } from './dates'
 export const MOIS_VALIDITE = 3            // base + 3 mois = expiration
 export const JOURS_PREAVIS = 21           // « bientôt » : ≤ 21 j avant expiration
 export const JOURS_GRACE_DESACTIVATION = 14 // tr.5 : désactivation à expiration + 14 j
@@ -29,9 +30,9 @@ function addDays(dateStr, n) {
   return base.toISOString().slice(0, 10)
 }
 
-// Date du jour en 'YYYY-MM-DD' (date pure, locale machine).
+// Date du jour en 'YYYY-MM-DD', à l'heure de Paris (heure de l'outil).
 function aujourdHui() {
-  return new Date().toISOString().slice(0, 10)
+  return aujourdhuiParis()
 }
 
 // Formate une DATE PURE 'YYYY-MM-DD' en FR (« 15 octobre 2026 »). Construction

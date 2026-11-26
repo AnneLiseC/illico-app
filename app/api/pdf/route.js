@@ -47,6 +47,7 @@ function getSupabaseAdmin() {
 // Couleurs, helpers, styles et RÉCAPITULATIF FINANCIER : extraits le 11/09 dans
 // lib/pdf/recapitulatifDocument.js pour que le cron de relances puisse joindre le même
 // récapitulatif au mail de demande d'acompte. Une seule définition, deux rendus.
+import { aujourdhuiParis } from '../../lib/dates'
 import {
   BLEU, BLEU_CLAIR, GRIS, GRIS_TEXTE,
   toNumber, fmt, logoBase64, styles,
@@ -83,6 +84,12 @@ export async function POST(request) {
       }
       if (!auth.profile.client_id || dossier.client_id !== auth.profile.client_id) {
         return NextResponse.json({ error: 'Accès refusé' }, { status: 403 })
+      }
+      // Accès expiré : même règle que mes_dossiers_client() (la RLS de l'espace client).
+      // Comparaison sur la date de Paris, comme current_date côté base.
+      const aujourdhui = aujourdhuiParis()
+      if (dossier.acces_expire_le && String(dossier.acces_expire_le).slice(0, 10) <= aujourdhui) {
+        return NextResponse.json({ error: 'Accès expiré' }, { status: 403 })
       }
     } else if (auth.profile.role === 'admin' || auth.profile.role === 'agente') {
       // Contrôle d'appartenance (service_role contourne la RLS) : admin = même
@@ -321,6 +328,8 @@ export async function POST(request) {
       const { data: crData } = await getSupabaseAdmin().from('comptes_rendus').select('*').eq('id', crId).single()
       // Le CR doit être rattaché au dossier validé (crId vient du body) — sinon 404.
       if (!crData || crData.dossier_id !== dossierId) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
+      // Un client ne télécharge que les CR publiés (même filtre que la vue client_comptes_rendus).
+      if (auth.profile.role === 'client' && crData.valide !== true) return NextResponse.json({ error: 'CR non trouvé' }, { status: 404 })
       cr = crData
 
       // Retrait des emojis (tofu en Roboto) AVANT le split : ne touche ni `## n.`,

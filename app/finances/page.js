@@ -16,10 +16,12 @@ import { supabase } from '../lib/supabase'
 import { formatNomClient } from '../lib/clients'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '../lib/auth-context'
-import { calculateDossierFinance, getActiveDevis, getSignedDevis, calculateSoldeAmoReel, DEFAULT_PART_AGENTE, TVA_FRAIS } from '../lib/finance'
+import { calculateDossierFinance, getActiveDevis, getSignedDevis, calculateSoldeAmoReel, calculateCourtageReel, DEFAULT_PART_AGENTE, TVA_FRAIS } from '../lib/finance'
 import { calcStatut } from '../lib/dossiers'
 import { Avatar } from '../components/shared'
 import { erreurAffichable } from '../lib/erreurs'
+import { aujourdhuiParis } from '../lib/dates'
+import { ligneApporteur } from '../lib/ca-reel'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
@@ -417,7 +419,7 @@ function FacturationAgentes({ facturesAgente, agenteSelectionnee, setAgenteSelec
   // Statut : à facturer → partiel → soldé. « Marquer reçu » = un versement du reste
   // en une fois. Détail des versements dans la ligne dépliée.
   const [ajout, setAjout] = useState(null)   // { type, montant, date } — formulaire d'ajout ouvert
-  const todayISO = () => new Date().toISOString().split('T')[0]
+  const todayISO = () => aujourdhuiParis()
 
   // Cellule Statut : badge (à facturer / partiel / soldé / trop-perçu) + « Marquer reçu ».
   // total = dû (pour le F1, dû CUMULÉ avec report). reste = total − reçu ; < 0 = trop-perçu reporté.
@@ -992,7 +994,8 @@ export default function Finances() {
 
     if (c.referentEstAdmin) {
       const fraisReel = fraisEnc ? c.fraisNet : 0
-      const courtageRegle = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
+      // Courtage réel = montant figé + suppléments TS encaissés (finance.js).
+      const courtR = calculateCourtageReel(d)
       const amoRegle = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
       // Cohabitation solde AMO échelonné : Σ tranches encaissées si le dossier en a,
       // sinon le gate tout-ou-rien actuel (branche else laissée verbatim).
@@ -1000,7 +1003,7 @@ export default function Finances() {
       // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
       // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
       const soldeAmoNetM = soldeAmoR.hasTranches ? soldeAmoR.recognizedNet : (amoRegle ? c.amoNet : 0)
-      const honReel = round2((courtageRegle ? c.courtNet : 0) + soldeAmoNetM)
+      const honReel = round2(courtR.recognizedNet + soldeAmoNetM)
       let comReelNet = 0
       let comBruteEncaissee = 0       // AJOUT affichage : Σ comHT brut des devis encaissés
       let royaltiesComReel = 0        // AJOUT affichage : Σ royalties (par devis, déjà arrondies)
@@ -1029,11 +1032,11 @@ export default function Finances() {
 
       // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
       const fraisBrutReel = fraisEnc ? c.fraisHT : 0
-      const honReelBrut = round2((courtageRegle ? c.finance.honoraires.courtage.ht : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)))
+      const honReelBrut = round2(courtR.tranches.reduce((t, x) => t + x.ht, 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0)))
       const royaltyReelle = round2(
         (fraisEnc ? c.fraisRoyalties : 0) +
         royaltiesComReel + royaltiesComApporteursReel +
-        (courtageRegle ? c.courtRoyalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
+        courtR.recognizedRoyalties + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
       )
 
       const gainAdminReel = round2(fraisReel + honReel + comReelNet + comApporteursReel - apporteurRetire)
@@ -1047,24 +1050,25 @@ export default function Finances() {
     const fraisAgenteReel    = fraisRegle ? c.fraisAgente : 0
 
     // Honoraires — HT net si réglé
-    const courtageRegle  = getSuivi(d, 'honoraires_courtage')?.statut_client === 'regle'
+    // Courtage réel = montant figé + suppléments TS encaissés (finance.js).
+    const courtR         = calculateCourtageReel(d)
     const amoRegle       = d.typologie === 'amo' && getSuivi(d, 'solde_amo')?.statut_client === 'regle'
     // Cohabitation solde AMO échelonné : Σ tranches encaissées si le dossier en a,
     // sinon le gate tout-ou-rien actuel (branches else laissées verbatim).
     const soldeAmoR = calculateSoldeAmoReel(d)
     // AMO : l'acompte AMO = la part courtage (même encaissement, compté via le courtage).
     // Le solde AMO ajoute la part AMO pleine (finance.js) quand il est réglé. Jamais les deux.
-    const honCourtageReel = courtageRegle ? c.courtNet : 0
+    const honCourtageReel = courtR.recognizedNet
     const soldeAmoNet    = soldeAmoR.hasTranches ? soldeAmoR.recognizedNet : (amoRegle ? c.amoNet : 0)
     const soldeAmoAgente = soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoRegle ? c.amoAgente : 0)
     const honAMOReel     = soldeAmoNet
     const honReel        = round2(honCourtageReel + honAMOReel)
     const royaltiesHonReel = round2(
-      (courtageRegle ? c.courtRoyalties : 0) +
+      courtR.recognizedRoyalties +
       (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoRegle ? c.amoRoyalties : 0))
     )
     const honAgenteReel  = round2(
-      (courtageRegle ? c.courtAgente : 0) +
+      courtR.parts.agente +
       soldeAmoAgente
     )
 
@@ -1110,7 +1114,7 @@ export default function Finances() {
     // AJOUTS affichage (brut/royalty réels) — n'entrent PAS dans le calcul du net.
     const fraisBrutReel = fraisRegle ? c.fraisHT : 0
     const honReelBrut = round2(
-      (courtageRegle ? c.finance.honoraires.courtage.ht : 0) +
+      courtR.tranches.reduce((t, x) => t + x.ht, 0) +
       (soldeAmoR.hasTranches ? soldeAmoR.recognizedHt : (amoRegle ? c.finance.honoraires.soldeAmo.ht : 0))
     )
     const royaltyReelle = round2(
@@ -1230,7 +1234,7 @@ export default function Finances() {
             mois,
             montant_ht: montantRedevance,
             statut: updates.statut === 'paye' ? 'regle' : 'en_attente',
-            date_paiement: updates.statut === 'paye' ? new Date().toISOString().split('T')[0] : null,
+            date_paiement: updates.statut === 'paye' ? aujourdhuiParis() : null,
           }, { onConflict: 'agente_id,annee,mois' })
           if (redevErr) setErreur(erreurAffichable(redevErr, 'Redevance'))
         }
@@ -1265,12 +1269,13 @@ export default function Finances() {
         if (error) throw new Error(error.message)
         fa = ins
       } else if (fa.montant == null) {
-        await supabase.from('factures_agente').update({ montant: round2(totalLive) }).eq('id', fa.id)
+        const { error: errMontant } = await supabase.from('factures_agente').update({ montant: round2(totalLive) }).eq('id', fa.id)
+        if (errMontant) throw new Error(errMontant.message)
         fa = { ...fa, montant: round2(totalLive) }
       }
       // 2. insérer le versement
       const { error: pErr } = await supabase.from('factures_agente_paiements')
-        .insert({ facture_agente_id: fa.id, montant, date_paiement: datePaiement || new Date().toISOString().split('T')[0] })
+        .insert({ facture_agente_id: fa.id, montant, date_paiement: datePaiement || aujourdhuiParis() })
       if (pErr) throw new Error(pErr.message)
       // 3. cumul → statut (routé par upsertFactureMoisType pour la synchro redevance F2)
       const { data: vers } = await supabase.from('factures_agente_paiements').select('montant').eq('facture_agente_id', fa.id)
@@ -1387,14 +1392,15 @@ export default function Finances() {
       }
 
       // Honoraires courtage
-      const suiviCourtage = suivi.find(s => s.type_echeance === 'honoraires_courtage' && s.statut_client === 'regle')
-      if (c.courtNet > 0 && suiviCourtage) {
-        const dateCourtage = suiviCourtage?.date_paiement || d.date_signature_contrat
-        const key = getKeyFromDate(dateCourtage, isAnnee)
-        addToKey(key, 'courtNet', c.courtNet, d.id)
-        addToKey(key, 'honAgenteNet', c.courtAgente, d.id)
-        addToKey(key, 'honBrut', c.finance.honoraires.courtage.ht, d.id)
-        addToKey(key, 'royaltyBucket', c.courtRoyalties, d.id)
+      // Courtage : montant figé à la date du paiement initial + chaque supplément TS
+      // à SA date d'encaissement (finance.js calculateCourtageReel).
+      for (const t of calculateCourtageReel(d).tranches) {
+        if (!(t.net > 0)) continue
+        const key = getKeyFromDate(t.date_paiement || d.date_signature_contrat, isAnnee)
+        addToKey(key, 'courtNet', t.net, d.id)
+        addToKey(key, 'honAgenteNet', t.parts.agente, d.id)
+        addToKey(key, 'honBrut', t.ht, d.id)
+        addToKey(key, 'royaltyBucket', t.royalties, d.id)
       }
 
       // Solde AMO — part AMO pleine (finance.js), gated par solde_amo réglé.
@@ -1466,12 +1472,7 @@ export default function Finances() {
         // Routage selon le mode (un seul mode par dossier, ensembles exclusifs) :
         // - mode total (sf.artisan_id NULL) → l'unique ligne finance 'total_chantier_ht'.
         // - par_devis (artisan_id renseigné) → la ligne du devis de cet artisan (inchangé).
-        const ligne = sf.artisan_id === null
-          ? finance.find(l => l.type === 'total_chantier_ht')
-          : finance.find(l => {
-              const dv = (d.devis_artisans || []).find(dv => dv.id === l.devisId)
-              return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id
-            })
+        const ligne = ligneApporteur(finance, sf, d)
         if (ligne) {
           // Côté CTP : coût Kiosque entier (CTP paie tout). Côté agente : sa PART réelle (ce qu'elle rembourse à CTP).
           addToKey(key, 'apporteurCoutTotalNet', ligne.totalHT, d.id)

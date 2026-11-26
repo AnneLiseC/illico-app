@@ -67,3 +67,11 @@ export function instantToParisLocal(iso) {
   const dt = DateTime.fromISO(iso, { zone: 'Europe/Paris' })
   return dt.isValid ? dt.toFormat("yyyy-MM-dd'T'HH:mm") : ''
 }
+
+// Date du jour (AAAA-MM-JJ) à l'heure de PARIS — l'heure de l'outil. À utiliser pour
+// toute date « aujourd'hui » enregistrée (paiement, déblocage, visite…). Jamais
+// `new Date().toISOString().slice(0, 10)` : c'est la date UTC, qui donne la VEILLE
+// entre minuit et 1 h (2 h en été).
+export function aujourdhuiParis(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+}

@@ -207,6 +207,21 @@ export function getPivotCourtage(dossier) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+// COURTAGE FIGÉ (décision du 28/08/2026, appliquée le 26/11/2026) : une fois l'acompte
+// courtage encaissé, BATILIS ne RECALCULE plus le courtage, il LIT le montant gelé —
+// celui que la ligne de suivi a enregistré au moment du règlement (montant facturé et
+// payé par le client). Absent / non réglé / montant vide → null (calcul normal).
+export function getCourtageGele(dossier) {
+  const suivi = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
+  const ligne = suivi.find(s =>
+    s?.type_echeance === 'honoraires_courtage' && s?.statut_client === 'regle' &&
+    s?.montant_ttc !== null && s?.montant_ttc !== undefined && s?.montant_ttc !== ''
+  )
+  if (!ligne) return null
+  const n = toNumber(ligne.montant_ttc, NaN)
+  return Number.isFinite(n) ? round2(n) : null
+}
+
 // Sous-total (HT/TTC) des devis dont date_signature > pivot (comparaison STRICTE :
 // même jour que le pivot = NON-TS). Devis sans date_signature EXCLUS (comptés
 // ≤ pivot, donc non-TS). pivot null → { htApres: 0, ttcApres: 0 }.
@@ -356,6 +371,7 @@ function honorairesCore(dossier, {
   totalHT: baseHT, totalTTC: baseTTC,
   totalHTHon, totalTTCHon,
   totalTTCApres: ttcApres = 0,
+  supplementTS = 0,          // COURTAGE seul + courtage figé : TTC des TS après paiement
   exclusPostPivot = false,
 }) {
   // Assiette HONORAIRES = base moins les devis exonérés. Absent → base pleine, donc
@@ -382,8 +398,21 @@ function honorairesCore(dossier, {
   const fraisRembourse    = dossier?.frais_statut === 'rembourse'
   const deductionFraisTTC = fraisRembourse ? round2(toNumber(dossier?.frais_consultation) || 0) : 0
 
+  // Courtage figé (cf. getCourtageGele). Sur un dossier COURTAGE seul, les travaux
+  // supplémentaires signés après le paiement s'AJOUTENT au montant gelé (ligne TS à
+  // encaisser en plus) ; sur un AMO, ils basculent dans le solde AMO (TS-1).
+  const gele = (isCourtage || isAmo) ? getCourtageGele(dossier) : null
+
   let courtage = { brut: 0, ttc: 0, ht: 0, royalties: 0, net: 0, parts: { agente: 0, admin: 0 } }
-  if (isCourtage || isAmo) {
+  if (gele !== null) {
+    const ttc       = isCourtage ? round2(gele + supplementTS * tauxCourtage) : gele
+    const brut      = round2(ttc + deductionFraisTTC)
+    const ht        = round2(ttc / TVA_HONORAIRES)
+    const royalties = round2(ht * ROYALTIES_RATE)
+    const net       = round2(ht - royalties)
+    const parts     = split(net, partAgente)
+    courtage = { brut, ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+  } else if (isCourtage || isAmo) {
     // brut = base × taux (AVANT déduction frais). net/ttc = brut − frais remboursés.
     // round2(brut − dedFrais) = round2(base×taux − dedFrais) car dedFrais est déjà
     // à 2 décimales → valeur ttc/ht identique à l'existant.
@@ -405,9 +434,13 @@ function honorairesCore(dossier, {
     // AMO = part AMO de toute la base + part courtage BASCULÉE des devis après
     // pivot (taux_courtage + taux_amo sur ttcApres). apres=0 → base × tauxAmo →
     // identique à l'existant.
-    const ttc       = reventile
-      ? round2((baseTTCHon - ttcApres) * tauxAmo + ttcApres * (tauxCourtage + tauxAmo))
-      : round2(baseTTCHon * tauxAmo)
+    // Courtage figé : le solde AMO = total AMO de la base − courtage brut DÉJÀ figé. Sans
+    // gel, c'est exactement la formule historique ci-dessous (base×taux_amo + TS×taux_courtage).
+    const ttc       = gele !== null
+      ? round2(baseTTCHon * (tauxCourtage + tauxAmo) - courtage.brut)
+      : reventile
+        ? round2((baseTTCHon - ttcApres) * tauxAmo + ttcApres * (tauxCourtage + tauxAmo))
+        : round2(baseTTCHon * tauxAmo)
     const ht        = round2(ttc / TVA_HONORAIRES)
     const royalties = round2(ht * ROYALTIES_RATE)
     const net       = round2(ht - royalties)
@@ -461,7 +494,10 @@ export function calculateHonorairesFinance(dossier) {
   const { htApres, ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(signes), pivot)
   // Pivot lu SANS le gate typologie : un dossier courtage a lui aussi des TS (TS-2).
   const exclusPostPivot = exclusTousApresPivot(signes, getPivotCourtage(dossier))
-  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, exclusPostPivot })
+  // Courtage seul + courtage figé : TS signés après le paiement, ajoutés au montant gelé.
+  const supplementTS = dossier?.typologie === 'courtage'
+    ? sousTotalApresPivot(devisAssietteHonoraires(signes), getPivotCourtage(dossier)).ttcApres : 0
+  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, supplementTS, exclusPostPivot })
 
   return {
     totalDevisTTCSignes: totaux.totalTTC,   // PLEIN : TOTAL CHANTIER inchangé
@@ -521,6 +557,53 @@ export function calculateSoldeAmoReel(dossier) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// COURTAGE RÉEL — reconnaissance à l'ENCAISSEMENT, ligne par ligne (26/11/2026).
+//   • ligne honoraires_courtage réglée → le montant GELÉ (courtage figé), à sa date ;
+//   • chaque ligne honoraires_courtage_ts réglée (supplément TS, courtage seul) → son
+//     montant, à SA date. Une ligne TS non réglée n'est jamais comptée.
+// Avant : tout le courtage (TS compris) était reconnu dès le paiement initial.
+// Même dérivation que partout : HT = TTC ÷ TVA honoraires, royalties 5 %, partage.
+// ─────────────────────────────────────────────────────────────────────────────
+export function calculateCourtageReel(dossier) {
+  const suivi = Array.isArray(dossier?.suivi_financier) ? dossier.suivi_financier : []
+  const partAgente = getPartAgente(dossier)
+  const tranche = (ttcBrut, date_paiement) => {
+    const ttc       = round2(ttcBrut)
+    const ht        = round2(ttc / TVA_HONORAIRES)
+    const royalties = round2(ht * ROYALTIES_RATE)
+    const net       = round2(ht - royalties)
+    const parts     = split(net, partAgente)
+    return { date_paiement: date_paiement || null, ttc, ht, royalties, net, parts: { agente: parts.agente, admin: parts.admin } }
+  }
+  const tranches = []
+  const initiale = suivi.find(s => s?.type_echeance === 'honoraires_courtage' && s?.statut_client === 'regle')
+  if (initiale) {
+    const gele = getCourtageGele(dossier)
+    // Ligne réglée sans montant (ancienne saisie) : repli sur le calcul, hors TS.
+    const ttc = gele !== null ? gele
+      : dossier?.typologie === 'courtage' ? calculateCourtageTS(dossier).courtageInitialTtc
+      : calculateHonorairesFinance(dossier).courtage.ttc
+    tranches.push(tranche(ttc, initiale.date_paiement))
+  }
+  for (const l of suivi) {
+    if (l?.type_echeance === 'honoraires_courtage_ts' && l?.statut_client === 'regle') {
+      tranches.push(tranche(toNumber(l.montant_ttc), l.date_paiement))
+    }
+  }
+  const somme = (k) => round2(tranches.reduce((s, t) => s + t[k], 0))
+  return {
+    regle: !!initiale,
+    recognizedNet: somme('net'),
+    recognizedRoyalties: somme('royalties'),
+    parts: {
+      agente: round2(tranches.reduce((s, t) => s + t.parts.agente, 0)),
+      admin:  round2(tranches.reduce((s, t) => s + t.parts.admin, 0)),
+    },
+    tranches,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HONORAIRES PRÉVISIONNELS
 // Même logique que calculateHonorairesFinance mais sur TOUS les devis actifs
 // (non refusés), conformément aux règles prévisionnel du CDC.
@@ -539,7 +622,10 @@ export function calculateHonorairesPrevi(dossier) {
   const actifs = getActiveDevis(dossier)
   const { htApres, ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(actifs), pivot)
   const exclusPostPivot = exclusTousApresPivot(actifs, getPivotCourtage(dossier))
-  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, exclusPostPivot })
+  // Courtage seul + courtage figé : TS signés après le paiement, ajoutés au montant gelé.
+  const supplementTS = dossier?.typologie === 'courtage'
+    ? sousTotalApresPivot(devisAssietteHonoraires(actifs), getPivotCourtage(dossier)).ttcApres : 0
+  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, supplementTS, exclusPostPivot })
 
   return {
     courtage: core.courtage,
@@ -572,7 +658,10 @@ export function calculateHonorairesRecuAccepte(dossier) {
   const recuAccepte = getDevisList(dossier).filter(dv => dv?.statut === 'recu' || dv?.statut === 'accepte')
   const { htApres, ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(recuAccepte), pivot)
   const exclusPostPivot = exclusTousApresPivot(recuAccepte, getPivotCourtage(dossier))
-  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, exclusPostPivot })
+  // Courtage seul + courtage figé : TS signés après le paiement, ajoutés au montant gelé.
+  const supplementTS = dossier?.typologie === 'courtage'
+    ? sousTotalApresPivot(devisAssietteHonoraires(recuAccepte), getPivotCourtage(dossier)).ttcApres : 0
+  const core = honorairesCore(dossier, { ...totaux, totalHTApres: htApres, totalTTCApres: ttcApres, supplementTS, exclusPostPivot })
 
   return {
     courtage: core.courtage,
@@ -589,6 +678,13 @@ export function calculateHonorairesRecuAccepte(dossier) {
 // ─────────────────────────────────────────────────────────────────────────────
 // APPORTEUR CLIENT
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Un devis compte-t-il pour l'apporteur ? (case cochée par défaut ; repli sur l'ancienne
+// règle « devis avec commission » si la colonne n'est pas chargée).
+export function estInclusApporteur(dv) {
+  if (dv?.apporteur_inclus === undefined || dv?.apporteur_inclus === null) return toNumber(dv?.commission_pourcentage) > 0
+  return dv.apporteur_inclus !== false
+}
 
 export function calculateApporteurFinance(dossier) {
   // L'apporteur est saisi en POINTS par l'utilisateur (« 5 » pour 5 %). Sous
@@ -615,8 +711,11 @@ export function calculateApporteurFinance(dossier) {
   const partAgente = getPartAgente(dossier)
   const actif      = dossier?.apporteur_actif === true
   const tauxDefini = tauxApporteur > 0
-  const signed     = getSignedDevis(dossier)
-    .filter(dv => toNumber(dv.commission_pourcentage) > 0)
+  // Devis PRIS EN COMPTE pour l'apporteur : case « Compte pour l'apporteur » du devis
+  // (devis_artisans.apporteur_inclus, cochée par défaut). Colonne absente de la requête
+  // → ancienne règle (devis avec commission), pour ne jamais changer un chiffre en douce.
+  const signedTous = getSignedDevis(dossier)
+  const signed     = signedTous.filter(estInclusApporteur)
 
   // Le coût ne se déclenche QUE si l'apporteur est activé sur CE chantier ET taux défini.
   // Taux null/0 = « taux à définir », coût 0, jamais de NaN.
@@ -641,10 +740,15 @@ export function calculateApporteurFinance(dossier) {
     // HT comme tout le module apporteur : l'apporteur est un partenaire professionnel,
     // il facture hors taxes.
     const hono   = calculateHonorairesFinance(dossier)
-    const baseHT = round2(
+    // Devis décochés : leur part d'honoraires sort de la base (au prorata du TTC de
+    // l'assiette honoraires). Aucun devis décoché → part = 1, calcul inchangé.
+    const ttcAssiette = (l) => sumDevis(devisAssietteHonoraires(l)).totalTTC
+    const totalAssiette = ttcAssiette(signedTous)
+    const part = totalAssiette > 0 ? ttcAssiette(signed) / totalAssiette : 0
+    const baseHT = round2(part * (
       toNumber(hono?.courtage?.ht) +
       (dossier?.typologie === 'amo' ? toNumber(hono?.soldeAmo?.ht) : 0)
-    )
+    ))
     const totalHT = round2(baseHT * tauxApporteur)
     const parts   = split(totalHT, partAgente)
     // « Réel » = ce qui est effectivement encaissé. Le courtage suit le déblocage des

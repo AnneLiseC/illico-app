@@ -13,6 +13,7 @@ import { libelleStatut } from '../../lib/statutLibelle'
 import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import Portail from '../Portail'
 import BoutonDictee from './BoutonDictee'
+import { aujourdhuiParis } from '../../lib/dates'
 
 // 16 statuts figés (clés = CHECK de la table `actions`), 4 familles couleur + libellé daté.
 export const STATUTS = [
@@ -118,7 +119,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
     // Numérotation PAR TYPE : cohérent avec le backfill SQL.
     const maxNum = visites.filter(v => (v.type_visite || 'suivi') === type).reduce((m, v) => Math.max(m, v.numero_visite || 0), 0)
     const { data: { user: auteurVisite } } = await supabase.auth.getUser()
-    const dateVisite = new Date().toISOString().slice(0, 10)
+    const dateVisite = aujourdhuiParis()
     const { data, error } = await supabase.from('comptes_rendus')
       .insert({ dossier_id: id, auteur_id: auteurVisite?.id ?? null, numero_visite: maxNum + 1, date_visite: dateVisite, type_visite: type, valide: false })
       .select().single()
@@ -151,7 +152,7 @@ export default function CRVisitesPanel({ id, setErreur, setSucces, setAnnot, onC
       dossier_id: id,
       auteur_id: user?.id ?? null,
       type_visite: src.type_visite,
-      date_visite: new Date().toISOString().slice(0, 10),
+      date_visite: aujourdhuiParis(),
       numero_visite: src.numero_visite,
       contenu_final: src.contenu_final || null,
       notes_brutes: src.notes_brutes || null,
@@ -326,7 +327,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
     const numero = `${visite?.numero_visite || 1}.${maxSuffixeVisite() + 1}`
     const { data, error } = await supabase.from('actions')
       .insert({ dossier_id: dossierId, cr_origine_id: visiteId, portee, numero,
-                statut: 'en_cours', statut_date: new Date().toISOString().slice(0, 10), ordre })
+                statut: 'en_cours', statut_date: aujourdhuiParis(), ordre })
       .select('*, cibles:action_cibles(id, lot_id, intervenant_id)').single()
     if (error) { setErreur?.('Ajout action : ' + error.message); return }
     await supabase.from('cr_actions').insert({ cr_id: visiteId, action_id: data.id, statut_au_cr: data.statut, texte_au_cr: data.texte, inclus: true })
@@ -367,7 +368,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
       const entree = { at: new Date().toISOString(), cr_id: visiteId, visite: titreVisite(visite), texte: t }
       champs.journal = [...(Array.isArray(a?.journal) ? a.journal : []), entree]
     }
-    if (statut) { champs.statut = statut; champs.statut_date = new Date().toISOString().slice(0, 10) }
+    if (statut) { champs.statut = statut; champs.statut_date = aujourdhuiParis() }
     setActions(prev => prev.map(x => x.id === actionId ? { ...x, ...champs } : x))
     const { error } = await supabase.from('actions').update({ ...champs, updated_at: new Date().toISOString() }).eq('id', actionId)
     if (error) setErreur?.('Journal : ' + error.message)
@@ -589,7 +590,7 @@ function VisitePage({ visite, dossierId, lots, setErreur, setSucces, setAnnot, a
         const { data, error } = await supabase.from('actions')
           .insert({ dossier_id: dossierId, cr_origine_id: visiteId, portee: c.portee, numero,
                     titre: c.titre || null, texte: c.texte || null, statut: c.statut,
-                    statut_date: c.statut_date || new Date().toISOString().slice(0, 10), ordre })
+                    statut_date: c.statut_date || aujourdhuiParis(), ordre })
           .select().single()
         if (error) { setErreur?.('Import action : ' + error.message); continue }
         ordre++
@@ -1189,7 +1190,7 @@ function ActionCard({ action, lots, withLot, carried, aMaj, onJournal, onModifie
         {/* Statut */}
         <select value={action.statut} onChange={e => {
           const k = e.target.value
-          const champs = { statut: k, statut_date: action.statut_date || new Date().toISOString().slice(0, 10) }
+          const champs = { statut: k, statut_date: action.statut_date || aujourdhuiParis() }
           champs.cr_cloture_id = CLOTURANTS.has(k) ? action.cr_origine_id : null
           onMaj(action.id, champs)
         }} className="input" style={{ height: 30, fontSize: 12, color: st.c, fontWeight: 700, flex: '0 1 190px' }}>

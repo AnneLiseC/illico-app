@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useRouter } from 'next/navigation'
 import { calcStatut, STATUT_CONFIG } from '../lib/dossiers'
 import { apiFetch } from '../lib/api-auth-client'
-import { fmtDateHeureFR, estDansDelaiEdition } from '../lib/dates'
+import { fmtDateHeureFR, estDansDelaiEdition, aujourdhuiParis } from '../lib/dates'
 import { statutAcces, formatDateFR } from '../lib/expiration'
 import MarkdownCR from '../components/MarkdownCR'
 
@@ -380,7 +380,7 @@ export default function EspaceClient() {
 
   // ── Agenda : séparer à venir / passés ──
   const maintenant     = new Date()
-  const auj            = new Date().toISOString().slice(0, 10)  // date pure du jour (interventions)
+  const auj            = aujourdhuiParis()  // date pure du jour (interventions)
   const rdvsAVenir     = rdvsClient.filter(r => new Date(r.date_heure) >= maintenant)
   const rdvsPasses     = rdvsClient.filter(r => new Date(r.date_heure) <  maintenant).reverse()  // + récents d'abord
   // intervention « à venir/en cours » : sa dernière date (date_fin, dernier jour, ou date_debut) >= aujourd'hui

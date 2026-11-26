@@ -8,7 +8,7 @@ import { formatNomClient } from '../../lib/clients'
 import { useRouter } from 'next/navigation'
 import { Avatar, StatutBadge, TypoBadge, Badge, Progress, MiniKpi } from '../../components/shared'
 import { calculerAvancement, calculerEtapes, ETAPES_LABELS, detecterCategorie } from '../../lib/dossiers'
-import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, resteAFacturerDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
+import { calculateDossierFinance, calculateDevisFinance, calculateCommissionsFinance, calculateCourtageTS, getPivotCourtage, getSignedDevis, getActiveDevis, calculateSoldeAmoReel, calculateCourtageReel, resteAFacturerDevis, COURTAGE_STANDARD, AMO_STANDARD, TVA_FRAIS, TVA_TRAVAUX } from '../../lib/finance'
 import { apiFetch } from '../../lib/api-auth-client'
 import { lierOuCreerRdvVisite } from '../../lib/rdvVisite'
 import { buildDevisPayload } from '../../lib/devis'
@@ -28,7 +28,7 @@ const CRVisitesPanel = dynamic(() => import('../../components/chantier/CRVisites
 // qui ne masquait plus rien d'utile. La modale « CR manuel » et ses fonctions RESTENT :
 // le nouveau panneau les rappelle par `onCreerAncien` / `onEditerAncien`.
 import { compressImageToBlob, heicToJpegFile } from '../../lib/images'
-import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal } from '../../lib/dates'
+import { fmtDateHeureFR, estDansDelaiEdition, parisLocalToInstant, instantToParisLocal, aujourdhuiParis } from '../../lib/dates'
 import { determinerAgenceConcernee, resoudreCibleDefaut, libelleCible } from '../../lib/cibles'
 import { buildInviteMailto } from '../../lib/inviteMail'
 import { calculerExpiration } from '../../lib/expiration'
@@ -188,7 +188,7 @@ function EcheanceRow({ label, sub, statut, date, variant, onSetPaid, onUnsetPaid
   const [editing, setEditing] = useState(false)
   const isRegle = statut === 'regle' || statut === 'recu'
   const isIllico = variant === 'illico'
-  const today = new Date().toISOString().slice(0, 10)
+  const today = aujourdhuiParis()
   // Cochable si non réglé (→ éditeur), décochable seulement hors lock.
   const canClick = !(isRegle && lock)
 
@@ -251,7 +251,7 @@ function EcheanceRow({ label, sub, statut, date, variant, onSetPaid, onUnsetPaid
 // `editing` — hooks interdits dans le .map des devis.
 function AcompteClientPill({ acomptePaye, dateAcompte, onSetPaid, onUnsetPaid, toneBg, toneFg }) {
   const [editing, setEditing] = useState(false)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = aujourdhuiParis()
   return (
     <div className="devis-kv" style={{alignItems:'center'}}>
       {editing ? (
@@ -293,7 +293,7 @@ function AcompteClientPill({ acomptePaye, dateAcompte, onSetPaid, onUnsetPaid, t
 // (état `editing`, hooks interdits dans le .map des factures).
 function FactureDatePill({ date, onSet, fmtDateFn }) {
   const [editing, setEditing] = useState(false)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = aujourdhuiParis()
   if (editing) {
     return (
       <DateConfirm
@@ -1779,7 +1779,7 @@ export default function FicheChantier({ params }) {
   // dossier.statut ne porte que ces 3 valeurs (CHECK strict, ÉTAPE D) ; sinon
   // calcStatut décide. Écriture immédiate + optimiste + rollback (pattern persistTaux).
   const majStatutManuel = async (valeur) => {
-    if (valeur === 'annule' && !confirm('Annuler ce dossier ? Il sera marqué « Annulé » (réversible via « Ré-ouvrir »).')) return
+    if (valeur === 'annule' && !confirm('Annuler ce dossier ? Il sera marqué « Annulé » (réversible via « Ré-ouvrir »).\n\nLes devis non signés passeront en « refusé » (les devis signés ne bougent pas).')) return
     const ancien = dossier.statut ?? null
     set('statut', valeur)
     setErreur(''); setSucces('')
@@ -1788,7 +1788,7 @@ export default function FicheChantier({ params }) {
     const payload = { statut: valeur }
     if (valeur === 'termine') {
       // date_cloture : on garde la 1ère clôture (ne pas écraser si re-clic).
-      const dateCloture = dossier.date_cloture || new Date().toISOString().slice(0, 10)
+      const dateCloture = dossier.date_cloture || aujourdhuiParis()
       payload.date_cloture = dateCloture
       // Recalcul à chaque clôture : base = date_fin_chantier si renseignée, sinon date_cloture.
       payload.acces_expire_le = calculerExpiration({ date_fin_chantier: dossier.date_fin_chantier, date_cloture: dateCloture })
@@ -1801,6 +1801,8 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
     if (error) { setErreur(erreurAffichable(error)); set('statut', ancien); return }
     setDossier(d => ({ ...d, ...payload }))
+    // Annulation : la base a passé les devis non signés en « refusé » (trigger) → on recharge.
+    if (valeur === 'annule') await chargerDevis()
     setSucces(valeur === 'termine' ? 'Dossier marqué terminé ✓' : valeur === 'annule' ? 'Dossier annulé ✓' : 'Dossier ré-ouvert (statut automatique) ✓')
     // Miroir Drive : déplace le dossier chantier vers le bucket du nouveau statut
     // (Clients/En cours|Terminés|Annulés). Non bloquant.
@@ -1827,7 +1829,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.storage.from('documents').upload(chemin, f, { upsert: true })
     if (error) { setErreur(erreurAffichable(error, 'Erreur upload')); setUploadingContrat(false); return }
     // Auto-signature : déposer le PDF du contrat coche le mandat (sauf s'il l'est déjà).
-    const today = new Date().toISOString().slice(0, 10)
+    const today = aujourdhuiParis()
     const payload = dossier.contrat_signe
       ? { contrat_url: chemin }
       : { contrat_url: chemin, contrat_signe: true, date_signature_contrat: today }
@@ -2028,7 +2030,7 @@ export default function FicheChantier({ params }) {
   const toggleStatutFacture = async (factureId, statut) => {
     const newStatut = statut === 'paye' ? 'en_attente' : 'paye'
     const facture = factures.find(f => f.id === factureId)
-    const datePaye = facture?.date_paiement || (newStatut === 'paye' ? new Date().toISOString().slice(0, 10) : null)
+    const datePaye = facture?.date_paiement || (newStatut === 'paye' ? aujourdhuiParis() : null)
     const { error } = await supabase.from('factures_artisans').update({
       statut: newStatut,
       date_paiement: newStatut === 'paye' ? datePaye : null,
@@ -2100,12 +2102,12 @@ export default function FicheChantier({ params }) {
     if (dossier.frais_statut === 'regle') {
       const { data: existingSuivi } = await supabase.from('suivi_financier')
         .select('id, date_paiement').eq('dossier_id', id).eq('type_echeance', 'frais_consultation').is('artisan_id', null).maybeSingle()
-      const today = new Date().toISOString().split('T')[0]
-      if (existingSuivi) {
-        await supabase.from('suivi_financier').update({ statut_client: 'regle', date_paiement: existingSuivi.date_paiement || today }).eq('id', existingSuivi.id)
-      } else {
-        await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'frais_consultation', artisan_id: null, statut_client: 'regle', date_paiement: today })
-      }
+      const today = aujourdhuiParis()
+      const { error: errSuivi } = existingSuivi
+        ? await supabase.from('suivi_financier').update({ statut_client: 'regle', date_paiement: existingSuivi.date_paiement || today }).eq('id', existingSuivi.id)
+        : await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'frais_consultation', artisan_id: null, statut_client: 'regle', date_paiement: today })
+      // Sans cette ligne, les frais n'entrent pas dans le CA réel : on le dit.
+      if (errSuivi) { setErreur('Informations enregistrées, mais le règlement des frais n\'a pas été inscrit au suivi financier : ' + erreurAffichable(errSuivi)); setSaving(false); return }
     }
     setSucces('Informations enregistrées ✓'); setModalInfos(false); setSaving(false)
   }
@@ -2141,7 +2143,7 @@ export default function FicheChantier({ params }) {
           .eq('type_echeance', 'frais_consultation')
           .is('artisan_id', null)
           .maybeSingle()
-        const today = new Date().toISOString().split('T')[0]
+        const today = aujourdhuiParis()
         let fraisErr = fraisSelErr
         if (!fraisErr) {
           if (existingSuivi) {
@@ -2383,7 +2385,7 @@ export default function FicheChantier({ params }) {
     } else {
       // Create
       if (!form.artisan_id) return false
-      const today = new Date().toISOString().slice(0, 10)
+      const today = aujourdhuiParis()
       // Le PDF fourni est-il le devis SIGNÉ ? (choix dans la modale.) Si oui → rangé dans
       // « Devis signé » (devis_signe_path) et le devis passe en signé/accepté.
       const estSigne = !!form.fichier && form.pdf_type === 'signe'
@@ -2509,7 +2511,7 @@ export default function FicheChantier({ params }) {
     const statutPrecedent = devis.find(d => d.id === devisId)?.statut
     let error
     if (statut === 'accepte') {
-      const aujourd_hui = new Date().toISOString().slice(0, 10)
+      const aujourd_hui = aujourdhuiParis()
       const [annee, mois, jour] = aujourd_hui.split('-')
       const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
       const dateParsee = parseDateFR(dateSignature)
@@ -2571,7 +2573,7 @@ export default function FicheChantier({ params }) {
       let statutOk = true
       const devisActuel = devis.find(d => d.id === devisId)
       if (devisActuel && devisActuel.statut !== 'accepte') {
-        const aujourd_hui = new Date().toISOString().slice(0, 10)
+        const aujourd_hui = aujourdhuiParis()
         const [annee, mois, jour] = aujourd_hui.split('-')
         const dateSignature = prompt('Date de signature du devis (JJ/MM/AAAA) :', `${jour}/${mois}/${annee}`)
         const dateParsee = parseDateFR(dateSignature)
@@ -3056,13 +3058,13 @@ export default function FicheChantier({ params }) {
 
   // Quand acompte_artisan est togglé côté suivi, propager aux factures_artisans acompte de cet artisan
   const setAcompteArtisanPaye = async (artisanId, paye, date, devisId = null) => {
-    const datePaye = paye ? (date || new Date().toISOString().slice(0, 10)) : null
+    const datePaye = paye ? (date || aujourdhuiParis()) : null
     const statutSuivi = paye ? 'regle' : 'en_attente'
-    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi, devisId)
+    if (!(await majSuiviAvecArtisan('acompte_artisan', artisanId, 'statut_client', statutSuivi, devisId))) return
     // Date du règlement client : posée au coche, effacée au décoche (datePaye=null).
     // N'affecte que date_paiement (l'événement déblocage statut_illico/date_deblocage
     // sur la même ligne reste intact).
-    await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye, devisId)
+    if (!(await majSuiviAvecArtisan('acompte_artisan', artisanId, 'date_paiement', datePaye, devisId))) return
     // Synchroniser les factures_artisans dont le libellé contient "acompte". Scopé AU
     // DEVIS si fourni → ne marque pas l'acompte d'un autre lot du même artisan.
     const facturesAcompte = factures.filter(f =>
@@ -3071,10 +3073,11 @@ export default function FicheChantier({ params }) {
       (f.libelle || '').toLowerCase().includes('acompte')
     )
     for (const f of facturesAcompte) {
-      await supabase.from('factures_artisans').update({
+      const { error: errFact } = await supabase.from('factures_artisans').update({
         statut: paye ? 'paye' : 'en_attente',
         date_paiement: paye ? datePaye : null,
       }).eq('id', f.id)
+      if (errFact) { setErreur('Acompte enregistré, mais la facture d\'acompte n\'a pas pu être mise à jour : ' + erreurAffichable(errFact)); return }
     }
     if (facturesAcompte.length > 0) {
       setFactures(prev => prev.map(f =>
@@ -3097,7 +3100,7 @@ export default function FicheChantier({ params }) {
     q = devisId ? q.eq('devis_id', devisId) : q.is('devis_id', null)
     const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur(erreurAffichable(selectErr)); return }
-    const dateEffective = date || new Date().toISOString().slice(0, 10)
+    const dateEffective = date || aujourdhuiParis()
     const payload = recu
       ? { statut_illico: 'recu', date_deblocage: dateEffective }
       : { statut_illico: 'en_attente', date_deblocage: null }
@@ -3134,20 +3137,22 @@ export default function FicheChantier({ params }) {
   // cohérent avec le toggle honoraires). Les 2 modes (par_devis: artisan_id renseigné /
   // total: artisan_id NULL) passent par le même chemin. Montant non écrit (F2 le calcule
   // via finance.js). date_paiement est de type `date` → AAAA-MM-JJ.
-  const setApporteurPaye = async (artisanId, paye, date = null) => {
+  // Règlement apporteur PAR DEVIS (mode par devis : devis_id + artisan_id renseignés) ;
+  // une seule ligne pour les modes total chantier / sur honoraires (artisan et devis vides).
+  const setApporteurPaye = async (devisId, artisanId, paye, date = null) => {
     let q = supabase.from('suivi_financier').select('id')
       .eq('dossier_id', id).eq('type_echeance', 'apporteur_agente')
-    q = artisanId === null ? q.is('artisan_id', null) : q.eq('artisan_id', artisanId)
+    q = devisId ? q.eq('devis_id', devisId) : q.is('artisan_id', null).is('devis_id', null)
     const { data: existing, error: selectErr } = await q.maybeSingle()
     if (selectErr) { setErreur(erreurAffichable(selectErr)); return }
 
     let error = null
     if (paye) {
-      const dateEffective = date || new Date().toISOString().slice(0, 10)
+      const dateEffective = date || aujourdhuiParis()
       if (existing) {
         ({ error } = await supabase.from('suivi_financier').update({ statut_ctp: 'rembourse', date_paiement: dateEffective }).eq('id', existing.id))
       } else {
-        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: artisanId, statut_ctp: 'rembourse', date_paiement: dateEffective }))
+        ({ error } = await supabase.from('suivi_financier').insert({ dossier_id: id, type_echeance: 'apporteur_agente', artisan_id: devisId ? artisanId : null, devis_id: devisId || null, statut_ctp: 'rembourse', date_paiement: dateEffective }))
       }
     } else if (existing) {
       ({ error } = await supabase.from('suivi_financier').delete().eq('id', existing.id))
@@ -3155,6 +3160,13 @@ export default function FicheChantier({ params }) {
     if (error) { setErreur(erreurAffichable(error)); return }
     const { data } = await supabase.from('suivi_financier').select('*').eq('dossier_id', id)
     setSuiviFinancier(data || [])
+  }
+
+  // Devis pris en compte (ou non) pour le calcul de l'apporteur.
+  const setApporteurInclus = async (devisId, inclus) => {
+    const { error } = await supabase.from('devis_artisans').update({ apporteur_inclus: inclus }).eq('id', devisId)
+    if (error) { setErreur(erreurAffichable(error)); return }
+    await chargerDevis()
   }
 
   // Frais de consultation : acter/défaire l'ENCAISSEMENT (case cochée du suivi).
@@ -3166,7 +3178,7 @@ export default function FicheChantier({ params }) {
     const { data: existing, error: selErr } = await supabase.from('suivi_financier')
       .select('id').eq('dossier_id', id).eq('type_echeance', 'frais_consultation').is('artisan_id', null).maybeSingle()
     if (selErr) { setErreur(erreurAffichable(selErr)); return }
-    const dateEff = recu ? (date || new Date().toISOString().slice(0, 10)) : null
+    const dateEff = recu ? (date || aujourdhuiParis()) : null
     const payload = { statut_client: recu ? 'regle' : 'en_attente', date_paiement: dateEff }
     let error = null
     if (existing) {
@@ -3190,7 +3202,7 @@ export default function FicheChantier({ params }) {
       if (type === 'honoraires_courtage') types.push('acompte_amo')
       else if (type === 'acompte_amo') types.push('honoraires_courtage')
     }
-    const dateEffective = date || new Date().toISOString().slice(0, 10)
+    const dateEffective = date || aujourdhuiParis()
     const { error } = await supabase.rpc('suivi_toggle_honoraires', {
       p_dossier_id: id,
       p_types: types,
@@ -3207,7 +3219,7 @@ export default function FicheChantier({ params }) {
   // suivi_toggle_honoraires, qui fige le montant à l'INSERT). Une ligne réglée est
   // close ; la décocher la rouvre (redevient absorbable par le recompute au prochain TS).
   const setCourtageTSPaye = async (ligne, paye, date = null) => {
-    const dateEffective = date || new Date().toISOString().slice(0, 10)
+    const dateEffective = date || aujourdhuiParis()
     const payload = paye
       ? { statut_client: 'regle', date_paiement: dateEffective }
       : { statut_client: 'en_attente', date_paiement: null }
@@ -3228,7 +3240,7 @@ export default function FicheChantier({ params }) {
     // La RPC insère toujours la tranche « réglée » ; si on la veut « en attente »,
     // on bascule son statut juste après (update direct autorisé par la RLS ALL).
     const { data: newId, error } = await supabase.rpc('solde_amo_paiement_add', {
-      p_dossier_id: id, p_montant: m, p_date: date || new Date().toISOString().slice(0, 10),
+      p_dossier_id: id, p_montant: m, p_date: date || aujourdhuiParis(),
     })
     if (error) { setErreur(erreurAffichable(error)); return }
     if (!regle && newId) {
@@ -3254,7 +3266,7 @@ export default function FicheChantier({ params }) {
     const { error } = await supabase.from('suivi_financier')
       .update({
         statut_client: versPaye ? 'regle' : 'en_attente',
-        date_paiement: versPaye ? (tranche.date_paiement || new Date().toISOString().slice(0, 10)) : (tranche.date_paiement || null),
+        date_paiement: versPaye ? (tranche.date_paiement || aujourdhuiParis()) : (tranche.date_paiement || null),
       })
       .eq('id', tranche.id).eq('type_echeance', 'solde_amo_paiement')
     if (error) { setErreur(erreurAffichable(error)); return }
@@ -3289,7 +3301,8 @@ export default function FicheChantier({ params }) {
   const supprimerHonoFactureSilencieux = async (hf) => {
     await retirerHonoFactureDrive(hf.id)
     if (hf.pdf_path) { try { await supabase.storage.from('documents').remove([hf.pdf_path]) } catch { /* best effort */ } }
-    await supabase.from('honoraires_factures').delete().eq('id', hf.id)
+    const { error } = await supabase.from('honoraires_factures').delete().eq('id', hf.id)
+    if (error) setErreur('La facture d\'honoraires liée n\'a pas pu être supprimée : ' + erreurAffichable(error))
   }
 
   const convertirEnAMO = async () => {
@@ -3831,7 +3844,7 @@ export default function FicheChantier({ params }) {
                   onChange={async e => {
                     const v = e.target.checked
                     const payload = v
-                      ? { contrat_signe: true, date_signature_contrat: dossier.date_signature_contrat || new Date().toISOString().slice(0, 10) }
+                      ? { contrat_signe: true, date_signature_contrat: dossier.date_signature_contrat || aujourdhuiParis() }
                       : { contrat_signe: false, date_signature_contrat: null }
                     setDossier(d => ({ ...d, ...payload }))
                     const { error } = await supabase.from('dossiers').update(payload).eq('id', id)
@@ -4914,14 +4927,15 @@ export default function FicheChantier({ params }) {
         const comAdmin         = comDebloque.reduce((s, d) => s + d.parts.admin, 0)
 
         // Honoraires — comptés par composant seulement si réglé (courtage / AMO solde)
-        const courtageRegle    = suiviCourtage?.statut_client === 'regle'
+        // Courtage : montant figé + suppléments TS encaissés (courtR, ci-dessous).
         const amoSoldeRegle    = suiviSoldeAMO?.statut_client === 'regle'
         // Cohabitation solde AMO échelonné : Σ tranches si présentes, sinon gate
         // tout-ou-rien actuel (branches else laissées verbatim).
         const soldeAmoR        = calculateSoldeAmoReel({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
-        const honRoyalties     = (courtageRegle ? fin.honoraires.courtage.royalties : 0) + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0))
-        const honAgente        = (courtageRegle ? fin.honoraires.courtage.parts.agente : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0))
-        const honAdmin         = (courtageRegle ? fin.honoraires.courtage.parts.admin : 0) + (soldeAmoR.hasTranches ? soldeAmoR.parts.admin : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0))
+        const courtR           = calculateCourtageReel({ ...dossier, devis_artisans: devis, suivi_financier: suiviFinancier })
+        const honRoyalties     = courtR.recognizedRoyalties + (soldeAmoR.hasTranches ? soldeAmoR.recognizedRoyalties : (amoSoldeRegle ? fin.honoraires.soldeAmo.royalties : 0))
+        const honAgente        = courtR.parts.agente + (soldeAmoR.hasTranches ? soldeAmoR.parts.agente : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.agente : 0))
+        const honAdmin         = courtR.parts.admin + (soldeAmoR.hasTranches ? soldeAmoR.parts.admin : (amoSoldeRegle ? fin.honoraires.soldeAmo.parts.admin : 0))
 
         // Réel = somme des flux réellement comptés ; net déduit du coût apporteur RÉEL (acomptes débloqués)
         const royaltiesTotal   = fraisRoyalties + honRoyalties + comRoyalties
@@ -5361,7 +5375,7 @@ export default function FicheChantier({ params }) {
                 const reste         = soldeTotalTtc - encaisse
                 const soldeState    = Math.abs(reste) < 0.01 ? 'solde' : reste > 0 ? 'reste' : 'trop'
                 const soldeColor    = soldeState === 'solde' ? 'var(--ok-strong)' : soldeState === 'trop' ? 'var(--bad-strong)' : 'var(--warn-strong)'
-                const today         = new Date().toISOString().slice(0, 10)
+                const today         = aujourdhuiParis()
                 return (
                   <div style={{display:'flex', flexDirection:'column', gap:8}}>
                     {hasTranches ? (
@@ -5458,22 +5472,27 @@ export default function FicheChantier({ params }) {
               })()}
 
               {/* ── Apporteur d'affaires — règlements dus ── */}
-              {fin.apporteur?.enabled && fin.apporteur.totalHT > 0 && (() => {
+              {fin.apporteur?.enabled && (() => {
                 const nomApp = dossier?.client?.apporteur_nom || 'Apporteur'
                 const pctApp = parseFloat((fin.apporteur.tauxApporteur * 100).toFixed(2))
                 const totalDu = fin.apporteur.totalHT
                 const lignes = fin.apporteur.lines || []
-                const totalPaye = lignes.reduce((s, l) => {
-                  if (fin.apporteur.mode === 'total_chantier_ht') {
-                    const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === null)
-                    return sf?.statut_ctp === 'rembourse' ? s + l.totalHT : s
-                  }
-                  const dv = devis.find(x => x.id === l.devisId)
-                  const artId = dv?.artisan_id || dv?.artisan?.id
-                  const sf = suiviFinancier.find(x => x.type_echeance === 'apporteur_agente' && x.artisan_id === artId)
-                  return sf?.statut_ctp === 'rembourse' ? s + l.totalHT : s
-                }, 0)
+                // Règlement suivi PAR DEVIS (mode par devis) ; une seule ligne sinon
+                // (total chantier / sur honoraires : artisan et devis vides).
+                const ligneSuivi = (devisId) => suiviFinancier.find(x =>
+                  x.type_echeance === 'apporteur_agente' &&
+                  (devisId ? x.devis_id === devisId : (x.artisan_id === null && x.devis_id == null))
+                )
+                const totalPaye = lignes.reduce((s, l) =>
+                  ligneSuivi(l.devisId)?.statut_ctp === 'rembourse' ? s + l.totalHT : s, 0)
                 const reste = Math.max(0, totalDu - totalPaye)
+                const libelleMode = fin.apporteur.mode === 'total_chantier_ht' ? 'sur total chantier HT'
+                  : fin.apporteur.mode === 'honoraires' ? 'sur les honoraires HT'
+                  : 'par devis signé'
+                // Devis signés pris en compte pour l'apporteur (case cochée par défaut).
+                const signesApporteur = devisSignes
+                const estInclus = (dv) => dv.apporteur_inclus === undefined || dv.apporteur_inclus === null
+                  ? Number(dv.commission_pourcentage) > 0 : dv.apporteur_inclus !== false
 
                 return (
                   <div style={{marginTop:6, paddingTop:14, borderTop:'1px dashed var(--ink-200)', display:'flex', flexDirection:'column', gap:10}}>
@@ -5481,7 +5500,7 @@ export default function FicheChantier({ params }) {
                       <div>
                         <div style={{fontSize:13, fontWeight:700, color:'var(--warn-strong)'}}>★ Apporteur d&apos;affaires — {nomApp}</div>
                         <div style={{fontSize:11.5, color:'var(--ink-500)', marginTop:2}}>
-                          {pctApp}% · {fin.apporteur.mode === 'total_chantier_ht' ? 'sur total chantier HT' : 'par devis signé'}
+                          {pctApp}% · {libelleMode}
                         </div>
                       </div>
                       <div style={{textAlign:'right'}}>
@@ -5489,22 +5508,31 @@ export default function FicheChantier({ params }) {
                           Total dû <span className="tnum" style={{color:'var(--ink-700)', fontWeight:600}}>{fmt(totalDu)}</span>
                         </div>
                         <div style={{fontSize:11, color: reste > 0 ? 'var(--warn-strong)' : 'var(--ok-strong)', marginTop:2, fontWeight:600}}>
-                          {reste > 0 ? `Reste à régler : ${fmt(reste)}` : '✓ Soldé'}
+                          {totalDu <= 0 ? 'Rien à régler' : reste > 0 ? `Reste à régler : ${fmt(reste)}` : '✓ Soldé'}
                         </div>
                       </div>
                     </div>
 
+                    {signesApporteur.length > 0 && (
+                      <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                        <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)'}}>Devis pris en compte pour l&apos;apporteur</div>
+                        {signesApporteur.map(dv => (
+                          <label key={dv.id} style={{display:'flex', alignItems:'center', gap:8, fontSize:12.5, color:'var(--ink-700)', cursor:'pointer'}}>
+                            <input type="checkbox" checked={estInclus(dv)} onChange={e => setApporteurInclus(dv.id, e.target.checked)} />
+                            <span>{dv.artisan?.entreprise || 'Devis'} · {fmt(dv.montant_ht)} HT</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
                     {lignes.map((l, idx) => {
                       const dv = l.devisId ? devis.find(x => x.id === l.devisId) : null
                       const artId = dv?.artisan_id || dv?.artisan?.id || null
-                      const sf = suiviFinancier.find(x =>
-                        x.type_echeance === 'apporteur_agente' &&
-                        (artId === null ? x.artisan_id === null : x.artisan_id === artId)
-                      )
+                      const sf = ligneSuivi(l.devisId)
                       const paye = sf?.statut_ctp === 'rembourse'
-                      const labelLigne = fin.apporteur.mode === 'total_chantier_ht'
-                        ? 'Règlement apporteur (total)'
-                        : `Devis ${l.label || dv?.artisan?.entreprise || ''}`
+                      const labelLigne = l.devisId
+                        ? `Devis ${l.label || dv?.artisan?.entreprise || ''}`
+                        : 'Règlement apporteur (total)'
                       return (
                         <EcheanceRow
                           key={l.devisId || idx}
@@ -5512,8 +5540,8 @@ export default function FicheChantier({ params }) {
                           sub={`${pctApp}% × ${fmt(l.baseHT)} HT · ${fmt(l.totalHT)}`}
                           statut={paye ? 'regle' : 'en_attente'}
                           date={sf?.date_paiement || null}
-                          onSetPaid={d => setApporteurPaye(artId, true, d)}
-                          onUnsetPaid={() => setApporteurPaye(artId, false)}
+                          onSetPaid={d => setApporteurPaye(l.devisId || null, artId, true, d)}
+                          onUnsetPaid={() => setApporteurPaye(l.devisId || null, artId, false)}
                           fmtDateFn={fmtD}
                         />
                       )
