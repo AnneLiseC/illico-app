@@ -173,6 +173,10 @@ export function deciderRattachement(parentPath, candidats, artisansParNom = new 
   // opposees — « pas range » d'un cote, « range, avec une coquille » de l'autre. Le chiffre
   // les separe : un brouillon ne se numerote pas.
   if (seg.some(s => /^_(?!\d)/.test(s))) return refus('dossier_de_rangement', false)
+  // Textures exportées par SketchUp (« … _extracted_textures ») : des centaines d'images
+  // techniques, jamais des documents de chantier. Ignorées d'office (26/11/2026 : ~100 lignes
+  // encombraient la liste « à rattacher »).
+  if (seg.some(s => /_extracted_textures$/i.test(s.trim()))) return refus('textures_sketchup', false)
   if (seg.length < 2) return refus('chemin_trop_court', false)
 
   // Le nom du chantier est le segment qui suit le bucket ; le bucket fait 1 ou 2 segments

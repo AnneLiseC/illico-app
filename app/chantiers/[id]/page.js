@@ -35,7 +35,7 @@ import { calculerExpiration } from '../../lib/expiration'
 import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } from '../../lib/rdvArtisans'
 import { prevenirClientParDefaut } from '../../lib/relances-texte'
 import { tauxSelonGrille, expliquerGrille } from '../../lib/apporteur'
-import { erreurAffichable } from '../../lib/erreurs'
+import { erreurAffichable, ecrireOuSignaler } from '../../lib/erreurs'
 import Portail from '../../components/Portail'
 
 // Liste des entités supprimées avec un chantier — source unique des 2 libellés
@@ -1508,15 +1508,15 @@ export default function FicheChantier({ params }) {
       if (errLignes) {
         // La base est née vide : on la retire plutôt que de la laisser afficher 0 €.
         console.error('creerBaseComparateur (lignes) :', errLignes.message)
-        await supabase.from('comparateur_simulations').delete().eq('id', base.id)
+        await ecrireOuSignaler(supabase.from('comparateur_simulations').delete().eq('id', base.id), setErreur, 'Comparateur')
         return
       }
 
       // ORDRE VOULU : on ne détrône l'ancienne base qu'une fois la nouvelle REMPLIE.
       // Une panne au milieu laisse deux bases valides, jamais une base vide en vitrine.
-      await supabase.from('comparateur_simulations').update({ est_base_courante: false })
-        .eq('dossier_id', id).eq('est_base_courante', true).neq('id', base.id)
-      await supabase.from('comparateur_simulations').update({ est_base_courante: true }).eq('id', base.id)
+      await ecrireOuSignaler(supabase.from('comparateur_simulations').update({ est_base_courante: false })
+        .eq('dossier_id', id).eq('est_base_courante', true).neq('id', base.id), setErreur, 'Comparateur')
+      await ecrireOuSignaler(supabase.from('comparateur_simulations').update({ est_base_courante: true }).eq('id', base.id), setErreur, 'Comparateur')
     } catch (e) { console.error('creerBaseComparateur :', e?.message) }
   }
 
@@ -2201,8 +2201,8 @@ export default function FicheChantier({ params }) {
     const nextNum = versions?.length ? Math.max(...versions.map(v => v.version_num)) + 1 : 1
     // Bascule l'ancienne courante puis insère la nouvelle (index partiel unique respecté).
     if (versions?.some(v => v.est_courante)) {
-      await supabase.from('devis_versions').update({ est_courante: false })
-        .eq('devis_artisan_id', devisId).eq('est_courante', true)
+      await ecrireOuSignaler(supabase.from('devis_versions').update({ est_courante: false })
+        .eq('devis_artisan_id', devisId).eq('est_courante', true), setErreur, 'Historique du devis')
     }
     const snap = { devis_artisan_id: devisId, version_num: nextNum, est_courante: true }
     for (const c of CHAMPS_VERSION) snap[c] = da[c] ?? null
@@ -2334,8 +2334,8 @@ export default function FicheChantier({ params }) {
     for (const c of CHAMPS_VERSION) if (c !== 'statut') payload[c] = version[c] ?? null
     const { error } = await supabase.from('devis_artisans').update(payload).eq('id', devisId)
     if (error) { setErreur(erreurAffichable(error)); return }
-    await supabase.from('devis_versions').update({ est_courante: false }).eq('devis_artisan_id', devisId).eq('est_courante', true)
-    await supabase.from('devis_versions').update({ est_courante: true }).eq('id', version.id)
+    await ecrireOuSignaler(supabase.from('devis_versions').update({ est_courante: false }).eq('devis_artisan_id', devisId).eq('est_courante', true), setErreur, 'Historique du devis')
+    await ecrireOuSignaler(supabase.from('devis_versions').update({ est_courante: true }).eq('id', version.id), setErreur, 'Historique du devis')
     await chargerDevis()
     setSucces(`Version v${version.version_num} restaurée ✓`)
   }

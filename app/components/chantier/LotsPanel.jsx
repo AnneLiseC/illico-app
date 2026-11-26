@@ -5,6 +5,7 @@
 // (RLS staff). Aucune dépendance IA.
 import { useEffect, useState, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
+import { ecrireOuSignaler } from '../../lib/erreurs'
 import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api-auth-client'
 
@@ -109,15 +110,17 @@ export default function LotsPanel({ id, devis, interventionsDossier, onMajInterv
     const cibles = lots.filter(l => l.parent_lot_id && !l.artisan_id && parById[l.parent_lot_id]?.artisan_id)
     if (!cibles.length) return
     ;(async () => {
+      const ok = new Set()   // seuls les sous-lots RÉELLEMENT enregistrés sont mis à jour à l'écran
       for (const s of cibles) {
-        await supabase.from('lots').update({ artisan_id: parById[s.parent_lot_id].artisan_id, updated_at: new Date().toISOString() }).eq('id', s.id)
+        if (await ecrireOuSignaler(supabase.from('lots').update({ artisan_id: parById[s.parent_lot_id].artisan_id, updated_at: new Date().toISOString() }).eq('id', s.id), setErreur, 'Lot')) ok.add(s.id)
       }
+      if (!ok.size) return
       setLots(prev => prev.map(l => {
         const p = parById[l.parent_lot_id]
-        return (l.parent_lot_id && !l.artisan_id && p?.artisan_id) ? { ...l, artisan_id: p.artisan_id } : l
+        return (ok.has(l.id) && !l.artisan_id && p?.artisan_id) ? { ...l, artisan_id: p.artisan_id } : l
       }))
     })()
-  }, [lots])
+  }, [lots]) // eslint-disable-line react-hooks/exhaustive-deps -- setErreur (prop du parent) ne doit pas relancer le backfill
 
   // ── Dépendances (lot_id « après » depend_de_lot_id) ──
   const ajouterDep = async (lotId, dependDeId) => {

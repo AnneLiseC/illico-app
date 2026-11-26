@@ -177,3 +177,13 @@ export function erreurAffichable(error, contexte) {
   journaliserErreur(contexte, error)
   return messageErreur(error, contexte)
 }
+
+// Écriture Supabase dont l'échec doit SE VOIR. `requete` = le builder (sans await) ;
+// en cas d'erreur, message lisible via setErreur (« <quoi> : … »). Renvoie true si OK.
+// Remplace les `await supabase.from(…).update(…)` dont le résultat était ignoré : une
+// coupure réseau faisait croire que l'enregistrement avait eu lieu.
+export async function ecrireOuSignaler(requete, setErreur, quoi = 'Enregistrement') {
+  const { error } = await requete
+  if (error) setErreur?.(`${quoi} : ${erreurAffichable(error)}`)
+  return !error
+}
