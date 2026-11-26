@@ -56,6 +56,26 @@ function stripMarkdown(text) {
 // Onglets pertinents pour un ESTIMO (avant bascule) : une estimation, pas un chantier.
 const ONGLETS_ESTIMO = new Set(['apercu', 'photos', 'finance', 'documents'])
 
+// Saisie d'un jour d'intervention. Le jour n'est ajouté qu'au clic sur « + Ajouter » :
+// ajouter au onChange cassait la saisie au clavier (le navigateur émet une date dès
+// l'année « 0002 », le champ se vidait et des dates fantômes étaient ajoutées).
+// Même patron que le planning.
+function AjoutJour({ onAjout }) {
+  const [jour, setJour] = useState('')
+  const valide = /^\d{4}-\d{2}-\d{2}$/.test(jour) && jour >= '2000-01-01'
+  const ajouter = () => { if (!valide) return; onAjout(jour); setJour('') }
+  return (
+    <div style={{display:'flex', gap:8}}>
+      <input className="input" type="date" value={jour}
+        onChange={e => setJour(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ajouter() } }}
+        style={{flex:1, height:38, padding:'0 12px', fontSize:13}} />
+      <button type="button" className="btn btn-ghost" disabled={!valide} onClick={ajouter}
+        style={{whiteSpace:'nowrap'}}>+ Ajouter</button>
+    </div>
+  )
+}
+
 function Svg({ children, size = 14 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -66,6 +86,7 @@ function Svg({ children, size = 14 }) {
 }
 const EditIcon     = () => <Svg><path d="M12 20H5a1 1 0 0 1-1-1v-7"/><path d="m14.5 4 5 5L9 19.5l-5 .5.5-5z"/></Svg>
 const PhoneIcon    = () => <Svg><path d="M5 4h3l2 5-2 1a11 11 0 0 0 6 6l1-2 5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></Svg>
+const UserIcon     = () => <Svg><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></Svg>
 const MailIcon     = () => <Svg><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/></Svg>
 const DlIcon       = () => <Svg><path d="M21 15v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3"/><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/></Svg>
 const DocIcon      = () => <Svg><path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z"/><path d="M14 3.5V8h4"/><path d="M8 12.5h8M8 16h6"/></Svg>
@@ -3596,6 +3617,12 @@ export default function FicheChantier({ params }) {
             style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
             <EditIcon /> Modifier
           </button>
+          {dossier.client_id && (
+            <button onClick={() => router.push(`/clients/${dossier.client_id}`)} className="btn btn-ghost"
+              style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
+              <UserIcon /> Fiche client
+            </button>
+          )}
           {client?.telephone && (
             <a href={`tel:${client.telephone}`} className="btn btn-ghost"
               style={{fontSize:12.5,display:'inline-flex',alignItems:'center',gap:6}}>
@@ -6641,19 +6668,12 @@ export default function FicheChantier({ params }) {
 
               {i.type_intervention === 'jours_specifiques' && (
                 <ModalField label="Ajouter des jours">
-                  <input className="input" type="date"
-                    onChange={e => {
-                      const date = e.target.value
-                      if (!date) return
-                      setI(prev => ({
-                        ...prev,
-                        jours_specifiques: (prev.jours_specifiques || []).includes(date)
-                          ? (prev.jours_specifiques || []).filter(j => j !== date)
-                          : [...(prev.jours_specifiques || []), date].sort(),
-                      }))
-                      e.target.value = ''
-                    }}
-                    style={{height:38, padding:'0 12px', fontSize:13}} />
+                  <AjoutJour onAjout={date => setI(prev => ({
+                    ...prev,
+                    jours_specifiques: (prev.jours_specifiques || []).includes(date)
+                      ? prev.jours_specifiques
+                      : [...(prev.jours_specifiques || []), date].sort(),
+                  }))} />
                   {(i.jours_specifiques || []).length > 0 && (
                     <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
                       {(i.jours_specifiques || []).map(j => (
@@ -7023,7 +7043,7 @@ export default function FicheChantier({ params }) {
         const closeModal = () => { setModalCreerIntervOuvert(false); setNouvIntervArtisanId(null) }
         const valid = !!nouvIntervArtisanId && (
           f.type_intervention === 'periode'
-            ? (!!f.date_debut && !!f.date_fin)
+            ? (!!f.date_debut && !!f.date_fin && f.date_fin >= f.date_debut)
             : (f.jours_specifiques || []).length > 0
         )
         const artisanSelected = devis.find(d => d.artisan_id === nouvIntervArtisanId)?.artisan
@@ -7126,19 +7146,12 @@ export default function FicheChantier({ params }) {
               {/* Jours spécifiques */}
               {f.type_intervention === 'jours_specifiques' && (
                 <ModalField label="Ajouter des jours">
-                  <input className="input" type="date"
-                    onChange={e => {
-                      const date = e.target.value
-                      if (!date) return
-                      setF(prev => ({
-                        ...prev,
-                        jours_specifiques: prev.jours_specifiques.includes(date)
-                          ? prev.jours_specifiques.filter(j => j !== date)
-                          : [...prev.jours_specifiques, date].sort(),
-                      }))
-                      e.target.value = ''
-                    }}
-                    style={{height:38, padding:'0 12px', fontSize:13}} />
+                  <AjoutJour onAjout={date => setF(prev => ({
+                    ...prev,
+                    jours_specifiques: prev.jours_specifiques.includes(date)
+                      ? prev.jours_specifiques
+                      : [...prev.jours_specifiques, date].sort(),
+                  }))} />
                   {f.jours_specifiques.length > 0 && (
                     <div style={{display:'flex', flexWrap:'wrap', gap:6, marginTop:8}}>
                       {f.jours_specifiques.map(j => (

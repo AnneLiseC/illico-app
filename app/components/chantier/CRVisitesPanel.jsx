@@ -3,6 +3,7 @@
 // Liste de visites → page par visite avec ses ACTIONS (portée générale ou par lot,
 // statut parmi les 16 + date). CRUD direct Supabase (RLS staff). Modèle ArchiReport.
 // Photos + checklist = 1c-2 ; aide IA = 1c-3 ; report d'une visite à l'autre = Lot 2.
+import AutoTextarea from '../AutoTextarea'
 import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { compressImageToBlob } from '../../lib/images'
@@ -1101,19 +1102,6 @@ function renderInline(txt) {
   }
   if (last < txt.length) out.push(<span key={k++}>{txt.slice(last)}</span>)
   return out
-}
-
-// Zone de texte dont la hauteur suit le contenu : nombre de lignes réelles (retours à la
-// ligne compris), recalculée à chaque changement. Évite les blocs fixes trop grands.
-function AutoTextarea({ value, style, ...props }) {
-  const ref = useRef(null)
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = el.scrollHeight + 'px'
-  }, [value])
-  return <textarea ref={ref} value={value} style={{ ...style, overflowY: 'hidden' }} {...props} />
 }
 
 // Champ description avec mise en forme : sélectionner du texte puis B (gras) / S (barré).

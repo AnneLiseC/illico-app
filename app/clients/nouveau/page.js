@@ -126,7 +126,7 @@ export default function NouveauClient() {
     const estPro = form.type_client === 'professionnel'
     const nomFinal = estPro
       ? `${form.forme_juridique ? form.forme_juridique + ' ' : ''}${form.raison_sociale}`.trim()
-      : form.nom
+      : form.nom.trim().toUpperCase()   // NOM toujours en majuscules (listes, PDF)
 
     // ── Détection de doublon (cahier des charges v6 §4) ──────────────────
     // Requête ÉTROITE : on ne charge pas tout le fichier clients pour comparer, on ne
@@ -161,7 +161,7 @@ export default function NouveauClient() {
       civilite: form.civilite,
       nom: nomFinal,
       prenom: estPro ? '' : form.prenom,
-      nom2: estPro ? null : (form.nom2 || null),
+      nom2: estPro ? null : (form.nom2?.trim().toUpperCase() || null),
       prenom2: estPro ? null : (form.prenom2 || null),
       forme_juridique: estPro ? (form.forme_juridique || null) : null,
       raison_sociale: estPro ? form.raison_sociale : null,

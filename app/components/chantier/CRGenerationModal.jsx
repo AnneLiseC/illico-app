@@ -15,6 +15,7 @@ import { Badge } from '../shared'
 // l'autorité — cette constante ne sert qu'à prévenir l'utilisateur AVANT l'attente.
 const CR_MAX_PIECES = 20
 import ModalShell from '../ModalShell'
+import AutoTextarea from '../AutoTextarea'
 import { erreurAffichable } from '../../lib/erreurs'
 
 // ModalField : dupliqué ici (composant trivial) pour éviter un import croisé avec la page.
@@ -742,13 +743,12 @@ export default function CRGenerationModal({ id, dossier, devis, artisans, docume
                               color: section.important ? '#a16207' : 'var(--ink-300)',
                             }}>⚠</button>
                         </div>
-                        <textarea
+                        <AutoTextarea
                           value={section.contenu}
                           onChange={e => setCrSectionsEditees(ss => ss.map((s, i) => i === idx ? { ...s, contenu: e.target.value } : s))}
-                          rows={Math.max(3, Math.ceil(section.contenu.length / 80))}
                           style={{
-                            width:'100%', padding:'10px 14px', fontSize:12, color:'var(--ink-700)',
-                            border:'none', outline:'none', resize:'vertical', lineHeight:1.55,
+                            display:'block', width:'100%', padding:'10px 14px', fontSize:12, color:'var(--ink-700)',
+                            border:'none', outline:'none', lineHeight:1.55,
                             transition:'background 150ms', fontFamily:'inherit',
                           }}
                           onFocus={e => { e.target.style.background = '#eef2ff' }}

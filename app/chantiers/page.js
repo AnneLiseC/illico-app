@@ -43,7 +43,7 @@ const villeFromAddr = (addr) => {
   const parts = addr.split(',')
   return parts[parts.length - 1]?.trim() || addr
 }
-const nomClient = (c) => formatNomClient(c, { civilite: true })
+const nomClient = (c) => formatNomClient(c, { civilite: true, upper: true })
 
 const TYPOLOGIES = {
   courtage: 'Courtage', amo: 'AMO', estimo: 'Estimo',
@@ -523,7 +523,7 @@ function ChantiersInner() {
     if (!profile) return
     let query = supabase
       .from('dossiers')
-      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email, type_client), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
+      .select('*, client:clients(civilite, prenom, nom, prenom2, nom2, adresse, telephone, email, type_client, forme_juridique, raison_sociale), referente:profiles!dossiers_referente_id_fkey(id, prenom, nom, role), devis_artisans(id, statut, montant_ht, montant_ttc, commission_pourcentage, artisan_id, artisan:artisans(id, entreprise, metier, ville)), comptes_rendus(id, type_visite), rendez_vous(type_rdv, date_heure), suivi_financier(type_echeance, montant_ttc, statut_illico, statut_client, artisan_id)')
       .eq('archive', false)
       .order('created_at', { ascending: false })
     if (profile.role === 'agente') query = query.eq('referente_id', profile.id)

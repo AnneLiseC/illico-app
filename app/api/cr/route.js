@@ -62,95 +62,36 @@ const TYPES_VISITE = {
   reception: 'Visite de réception de chantier',
 }
 
+// Sections et règles volontairement COURTES (simplification du 26/11/2026) : un contexte
+// d'une phrase + 2-3 règles par type. Format commun à tous les types, posé une seule fois
+// dans buildSystemPrompt.
 const SECTIONS_PAR_TYPE = {
-  r1: ['Identification du projet', 'État des lieux', 'Périmètre des travaux par pièce / zone', "Points d'attention et contraintes techniques", 'Artisans à solliciter', 'Prochaines étapes',],
-  r2: ['Identification du chantier', 'Travaux à réaliser par artisan', 'Constat et points techniques', "Plan d'action et séquençage", 'Travaux manquants', 'Prochaines étapes',],
-  r3: ['Identification du chantier','Récapitulatif des devis présentés','Points de discussion', 'Décisions prises','Prochaines étapes',],
-  suivi: ['Identification du chantier', 'Travaux réalisés depuis la dernière visite','Situation des lots', 'Décisions et actions à suivre','Planning prévisionnel',],
-  reception: ['Identification du chantier','Travaux réceptionnés', 'Réserves constatées', 'Délais de levée des réserves', 'Signature de réception', ],
+  r1: ['Identification du projet', 'Constat et besoins du client', 'Travaux envisagés', 'Prochaines étapes'],
+  r2: ['Identification du chantier', 'Travaux par entreprise', 'Points techniques', 'Prochaines étapes'],
+  r3: ['Identification du chantier', 'Devis présentés', 'Décisions du client', 'Prochaines étapes'],
+  suivi: ['Identification du chantier', 'Avancement par entreprise', 'Décisions et actions', 'Prochaines interventions'],
+  reception: ['Identification du chantier', 'Travaux réceptionnés', 'Réserves et délais de levée'],
 }
 
 const REGLES_SPECIFIQUES = {
-  r1: `CONTEXTE R1 :Cette première visite réunit uniquement le courtier illiCO travaux et le client. Aucun artisan n'est présent ni retenu à ce stade. Aucun devis n'existe. Aucun planning de travaux ne doit être créé.
+  r1: `CONTEXTE R1 : première visite, courtier et client seuls. Pas d'artisan, pas de devis, pas de planning.
+- Décrire l'existant, les besoins du client et les travaux envisagés.
+- "Prochaines étapes" peut citer les corps de métier à consulter.`,
 
-Le compte-rendu doit se concentrer sur :
-- l'état des lieux ;
-- les besoins exprimés par le client ;
-- le périmètre des travaux ;
-- les contraintes techniques observées ;
-- les informations nécessaires à la préparation de la visite R2.
+  r2: `CONTEXTE R2 : visite technique avec le client et les artisans, avant les devis.
+- Décrire ce que chaque entreprise doit chiffrer.
+- Aucun montant.`,
 
-FORMATS :
-- "Identification du projet" : chaque ligne au format **Label :** Valeur.
-- Les autres sections sont rédigées sous forme de listes à puces. `,
+  r3: `CONTEXTE R3 : présentation des devis au client, à l'agence.
+- Résumer les devis et noter ce que le client valide, refuse ou veut faire compléter.`,
 
-  r2: `CONTEXTE R2 : Cette visite réunit le courtier illiCO travaux, le client et les artisans sélectionnés. Il s'agit de la visite technique préalable à l'établissement des devis.
+  suivi: `CONTEXTE VISITE DE SUIVI : point d'avancement du chantier.
+- Pour chaque entreprise : ce qui est fait, ce qui est en cours, ce qui reste à suivre.
+- "Prochaines interventions" : uniquement des dates futures citées dans les notes, sinon « Néant. »`,
 
-RÈGLES :
-- Décrire les travaux prévus pour chaque artisan présent.
-- Identifier les contraintes techniques observées.
-- Identifier les éventuels travaux complémentaires à chiffrer.
-- Ne pas présenter de montants ou de devis.
-
-FORMATS :
-- "Identification du chantier" : chaque ligne au format **Label :** Valeur.
-- Les autres sections sont rédigées sous forme de listes à puces. `,
-
-  r3: `CONTEXTE R3 :Cette visite réunit uniquement le courtier illiCO travaux et le client. Elle se déroule à l'agence. Elle a pour objectif la présentation des devis et l'accompagnement à la décision.
-
-RÈGLES :
-- Résumer les devis présentés.
-- Mentionner les arbitrages du client.
-- Identifier les lots validés, refusés ou à compléter.
-- Ne pas décrire le suivi de chantier.
-
-FORMATS :
-- "Identification du chantier" : chaque ligne au format **Label :** Valeur.
-- Les autres sections sont rédigées sous forme de listes à puces. `,
-
-  suivi: `CONTEXTE VISITE DE SUIVI : Cette visite a pour objectif de constater l'avancement du chantier et d'identifier les actions à venir.
-
-RÈGLES :
-- "Travaux réalisés depuis la dernière visite" contient uniquement les travaux réalisés.
-- "Situation des lots" décrit l'état actuel de chaque entreprise ou lot.
-- "Décisions et actions à suivre" regroupe les validations, décisions et actions restantes.
-- Le planning prévisionnel ne contient que les interventions futures.
-- Ne jamais afficher de dates passées ou d'interventions terminées.
-
-FORMATS :
-- "Identification du chantier" : chaque ligne au format **Label :** Valeur.
-- "Travaux réalisés depuis la dernière visite" : liste à puces uniquement.
-- "Situation des lots" :
-  pour chaque entreprise :
-
-  **Nom de l'entreprise :**
-
-  - Réalisé : ...
-  - En cours : ...
-  - Points à suivre : ...
-
-  Ne pas créer de rubrique vide.
-
-- "Décisions et actions à suivre" :  liste à puces uniquement.
-
-- "Planning prévisionnel" :  générer uniquement si des dates futures sont mentionnées.
-  Utiliser un tableau markdown :
-
-  | Date | Intervention prévue | Responsable | Commentaires |
-  |------|---------------------|-------------|--------------|
-`,
-
-  reception: `CONTEXTE RÉCEPTION : Cette visite a pour objectif la réception des travaux.
-
-RÈGLES :
-- Décrire uniquement les travaux réceptionnés.
-- Lister les réserves de manière factuelle.
-- Associer chaque réserve à un délai de levée lorsqu'il est connu.
-- Ne pas refaire l'historique du chantier.
-
-FORMATS :
-- "Identification du chantier" : chaque ligne au format **Label :** Valeur.
-- Les autres sections sont rédigées sous forme de listes à puces.`,
+  reception: `CONTEXTE RÉCEPTION : réception des travaux.
+- Lister les réserves de façon factuelle, avec leur délai de levée s'il est connu.
+- Ne pas refaire l'historique du chantier.`,
 }
 
 export function buildSystemPrompt(type, agenceNom) {
@@ -160,30 +101,25 @@ export function buildSystemPrompt(type, agenceNom) {
     .map((s, i) => `${i + 1}. ${s}`)
     .join('\n')
 
-  return `Tu es un expert en gestion de chantiers BTP. Tu rédiges des rapports de visite professionnels pour ${agenceNom}, agence de courtage en travaux et AMO.
+  return `Tu rédiges des comptes rendus de visite de chantier pour ${agenceNom}, agence de courtage en travaux et AMO.
 
 TYPE DE VISITE : ${typLabel}
 
-CONSIGNES GÉNÉRALES :
-
-- Ton professionnel, simple et factuel.
-- Toujours utiliser le terme client ou clients.
-- Corriger l'orthographe, la grammaire et la conjugaison.
-- Reprendre exactement les noms propres, entreprises, produits, références et matériaux fournis.
-- Ne jamais modifier un nom propre ou une référence technique.
-- Restituer uniquement les informations réellement constatées ou indiquées.
-- Ne pas inventer d'informations manquantes.
-- Si une information n'est pas connue, ne pas la déduire.
-- Éviter toute répétition entre les sections.
-- Une information ne doit apparaître qu'une seule fois dans le compte-rendu.
-- Mettre en avant les décisions et validations lorsqu'elles existent.
-- Signaler les points de vigilance uniquement lorsqu'ils ont un impact réel sur le chantier.
-- Éviter les formulations alarmistes, excessivement administratives ou juridiques.
-- Ne jamais utiliser d'emojis ou de pictogrammes.
+CONSIGNES :
+- Ton professionnel, simple et factuel. Dire « le client » ou « les clients ».
+- Corriger l'orthographe, mais reprendre à l'identique les noms propres, entreprises, produits et références.
+- N'écrire que ce qui figure dans les notes ou les pièces jointes : ne rien inventer, ne rien déduire.
+- Chaque information n'apparaît qu'une fois.
+- Pas d'emoji, pas de ton alarmiste ou juridique.
 
 ${reglesSpecifiques}
 
-SECTIONS ATTENDUES (respecter exactement l'ordre et les intitulés) :
+FORMAT :
+- Première section : une ligne par information, au format **Label :** Valeur.
+- Autres sections : listes à puces courtes.
+- Section sans information : « Néant. »
+
+SECTIONS (dans cet ordre, avec ces intitulés) :
 
 ${sections}
 

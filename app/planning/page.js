@@ -17,6 +17,7 @@ import { synchroniserArtisansRdv, valeurPrevenirClient, idsArtisansDepuisRdv } f
 import { prevenirClientParDefaut } from '../lib/relances-texte'
 import { erreurAffichable } from '../lib/erreurs'
 import Portail from '../components/Portail'
+import { formatNomClient } from '../lib/clients'
 
 // ─── PALETTE illiCO TRAVAUX ───────────────────────────────────────────────────
 const COLORS = {
@@ -48,6 +49,8 @@ const ARTISAN_COLORS = [COLORS.violet, COLORS.coral, COLORS.mint, COLORS.gold, C
 // instant ; on force l'affichage en Europe/Paris. (Sur les dates `date` pures des
 // interventions, ce pin Paris ne décale pas le jour pour un usage FR.)
 // ⚠️ Ne PAS passer par lib/dates.parseUTC : il ajoute 'Z' et casserait une valeur déjà suffixée +00:00.
+// Nom du client affiché partout dans le planning (source unique, NOM en majuscules).
+const nomCli = (c) => c ? formatNomClient(c, { upper: true }) : ''
 const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'Europe/Paris' }) : '—'
 const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }) : '—'
 const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' }) : '—'
@@ -113,9 +116,9 @@ export default function Planning() {
 
   const chargerTout = async () => {
     const [rdvRes, intRes, dosRes, artRes, devRes, agRes, agencesRes, ciblesRes] = await Promise.all([
-      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise), rendez_vous_artisans(artisan_id)').order('date_heure'),
-      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom)), artisan:artisans(id, entreprise)').order('date_debut'),
-      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_demarrage_chantier_manuel, date_fin_chantier, client:clients(civilite, prenom, nom)').order('reference'),
+      supabase.from('rendez_vous').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom, prenom2, nom2, type_client, forme_juridique, raison_sociale)), artisan:artisans!rendez_vous_artisan_id_fkey(id, entreprise), rendez_vous_artisans(artisan_id)').order('date_heure'),
+      supabase.from('interventions_artisans').select('*, dossier:dossiers(id, reference, referente_id, client:clients(civilite, prenom, nom, prenom2, nom2, type_client, forme_juridique, raison_sociale)), artisan:artisans(id, entreprise)').order('date_debut'),
+      supabase.from('dossiers').select('id, reference, referente_id, agence_id, date_demarrage_chantier, date_demarrage_chantier_manuel, date_fin_chantier, client:clients(civilite, prenom, nom, prenom2, nom2, type_client, forme_juridique, raison_sociale)').order('reference'),
       supabase.from('artisans').select('id, entreprise').order('entreprise'),
       supabase.from('devis_artisans').select('*, artisan:artisans(id, entreprise)'),
       supabase.from('profiles').select('id, prenom, nom, role').in('role', ['admin', 'agente']).order('prenom'),
@@ -294,7 +297,7 @@ export default function Planning() {
     .filter(r => !agenteFiltre  || r.dossier?.referente_id === agenteFiltre)
     .map(r => {
       const cfg = TYPE_CONFIG[r.type_rdv] || TYPE_CONFIG.visite_technique_client
-      const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
+      const client = nomCli(r.dossier?.client)
       // Typé sans client (ex. import Google typé mais non rattaché) : on retombe sur le
       // titre Google stocké plutôt que d'afficher un libellé tronqué "R3 · ".
       const titre = r.type_rdv === 'autres'
@@ -316,7 +319,7 @@ export default function Planning() {
     .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
     .flatMap(i => {
       const color = couleurArtisan(i.artisan_id)
-      const client = `${i.dossier?.client?.prenom || ''} ${i.dossier?.client?.nom || ''}`.trim()
+      const client = nomCli(i.dossier?.client)
       const titre = `${i.artisan?.entreprise || ''}${client ? ' x ' + client : ''}`
       if (i.type_intervention === 'periode') {
         // Barre continue journée entière du 1er au dernier jour (fin exclusive = date_fin + 1).
@@ -341,8 +344,14 @@ export default function Planning() {
       return evts
     }), [dossiersScoped, agenteFiltre])
 
-  const tousEvenements = useMemo(() => [...evenementsRdv, ...evenementsInterventions, ...evenementsDates],
-    [evenementsRdv, evenementsInterventions, evenementsDates])
+  // La recherche filtre le CALENDRIER (avant : elle ne changeait qu'un compteur).
+  const tousEvenements = useMemo(() => {
+    const tous = [...evenementsRdv, ...evenementsInterventions, ...evenementsDates]
+    const q = recherche.trim().toLowerCase()
+    if (!q) return tous
+    return tous.filter(e => [e.title, e.extendedProps?.data?.dossier?.reference, e.extendedProps?.data?.reference]
+      .filter(Boolean).join(' ').toLowerCase().includes(q))
+  }, [evenementsRdv, evenementsInterventions, evenementsDates, recherche])
 
   // ── AGENDA SIDEBAR ─────────────────────────────────────────────────────────
 
@@ -357,7 +366,7 @@ export default function Planning() {
       .filter(r => !typeFiltre    || r.type_rdv === typeFiltre)
       .map(r => {
         const cfg = TYPE_CONFIG[r.type_rdv] || TYPE_CONFIG.visite_technique_client
-        const client = `${r.dossier?.client?.prenom || ''} ${r.dossier?.client?.nom || ''}`.trim()
+        const client = nomCli(r.dossier?.client)
         return {
           id: r.id, type: 'rdv', date: new Date(r.date_heure),
           titre: r.type_rdv === 'autres' ? (r.titre || cfg.label) : `${cfg.short} · ${client}`,
@@ -366,16 +375,20 @@ export default function Planning() {
         }
       })
 
+    // Jours spécifiques : date_debut peut être vide → on prend le prochain jour prévu.
+    const prochainJour = (i) => i.type_intervention === 'jours_specifiques'
+      ? ([...(i.jours_specifiques || [])].sort().find(j => new Date(j + 'T23:59:59') >= maintenant) || null)
+      : i.date_debut
     const intItems = interventionsScoped
-      .filter(i => { const d = new Date(i.date_debut); return d >= maintenant && d <= dans30j })
+      .filter(i => { const j = prochainJour(i); if (!j) return false; const d = new Date(j); return d >= new Date(maintenant.toDateString()) && d <= dans30j })
       .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
       .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
       .map(i => {
         const color = couleurArtisan(i.artisan_id)
         return {
-          id: i.id, type: 'intervention', date: new Date(i.date_debut),
+          id: i.id, type: 'intervention', date: new Date(prochainJour(i)),
           titre: `🔨 ${i.artisan?.entreprise || ''}`,
-          sous: `${i.dossier?.client?.prenom || ''} ${i.dossier?.client?.nom || ''} · ${i.type_intervention === 'periode' ? `${fmtDate(i.date_debut)} → ${fmtDate(i.date_fin)}` : `${i.jours_specifiques?.length || 0} j`}`,
+          sous: `${nomCli(i.dossier?.client)} · ${i.type_intervention === 'periode' ? `${fmtDate(i.date_debut)} → ${fmtDate(i.date_fin)}` : `${i.jours_specifiques?.length || 0} j`}`,
           color, data: i,
         }
       })
@@ -720,10 +733,7 @@ export default function Planning() {
         {/* Type RDV */}
         <select className="input" value={typeFiltre} onChange={e => setTypeFiltre(e.target.value)} style={{height:34, minWidth:140}}>
           <option value="">Tous les types</option>
-          <option value="visite_technique_client">R1 — Visite client</option>
-          <option value="visite_technique_artisan">R2 — Visite artisan</option>
-          <option value="presentation_devis">R3 — Devis</option>
-          <option value="autres">Autres</option>
+          {Object.entries(TYPE_CONFIG).map(([k, cfg]) => <option key={k} value={k}>{cfg.label}</option>)}
         </select>
 
         <select className="input" value={artisanFiltre} onChange={e => setArtisanFiltre(e.target.value)} style={{height:34, minWidth:140}}>
@@ -921,7 +931,7 @@ export default function Planning() {
                     <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>
                       {elementSelectionne.data.type_rdv === 'autres' && elementSelectionne.data.titre
                         ? elementSelectionne.data.titre
-                        : `${elementSelectionne.data.dossier?.client?.prenom || ''} ${elementSelectionne.data.dossier?.client?.nom || ''}`.trim() || 'Autre RDV'}
+                        : nomCli(elementSelectionne.data.dossier?.client) || 'Autre RDV'}
                     </div>
                   </>
                 })()}
@@ -968,7 +978,7 @@ export default function Planning() {
               {/* Détail Intervention */}
               {elementSelectionne?.type === 'intervention' && !modeEdition && (
                 <div style={{display:'flex', flexDirection:'column', gap:12}}>
-                  <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Chantier</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.dossier?.reference} — {elementSelectionne.data.dossier?.client?.prenom} {elementSelectionne.data.dossier?.client?.nom}</div></div>
+                  <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Chantier</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.dossier?.reference} — {nomCli(elementSelectionne.data.dossier?.client)}</div></div>
                   <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
                     <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}><div className={labelCls}>Type</div><div style={{fontSize:13, fontWeight:600, color:'var(--ink-800)', marginTop:4}}>{elementSelectionne.data.type_intervention === 'periode' ? 'Période continue' : 'Jours spécifiques'}</div></div>
                     <div style={{background:'var(--surface-2)', borderRadius:10, padding:12}}>
@@ -1027,7 +1037,7 @@ export default function Planning() {
                   {formRdv.type_rdv !== 'autres' && <div><label className={labelCls}>Chantier *</label>
                     <select value={formRdv.dossier_id} onChange={e => setFormRdv(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiersRdvModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersRdvModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {nomCli(d.client)}</option>)}
                     </select>
                   </div>}
 {/* R4 — LE SÉLECTEUR RESTE VISIBLE MÊME SANS CALENDRIER CONFIGURÉ.
@@ -1132,7 +1142,7 @@ export default function Planning() {
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
                     <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
-                      {dossiersIntModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {d.client?.prenom} {d.client?.nom}</option>)}
+                      {dossiersIntModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {nomCli(d.client)}</option>)}
                     </select>
                   </div>}
                   {/* Même règle que pour les rendez-vous : jamais masqué. (R4) */}
@@ -1232,7 +1242,7 @@ export default function Planning() {
               {/* Dates clés */}
               {elementSelectionne?.type === 'date_cle' && (
                 <div style={{display:'flex', flexDirection:'column', gap:16}}>
-                  <div style={{fontSize:13, color:'var(--ink-500)'}}>{elementSelectionne.data.client?.prenom} {elementSelectionne.data.client?.nom}</div>
+                  <div style={{fontSize:13, color:'var(--ink-500)'}}>{nomCli(elementSelectionne.data.client)}</div>
                   <div><label className={labelCls}>Démarrage <span style={{fontWeight:400, color:'var(--ink-500)'}}>(auto si vide)</span></label><input type="date" value={formDateCle.date_demarrage_chantier_manuel} onChange={e => setFormDateCle(f => ({ ...f, date_demarrage_chantier_manuel: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
                   <div><label className={labelCls}>🏁 Fin</label><input type="date" value={formDateCle.date_fin_chantier} onChange={e => setFormDateCle(f => ({ ...f, date_fin_chantier: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>

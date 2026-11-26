@@ -148,13 +148,13 @@ function FicheClientInner({ params }) {
     const estPro = client.type_client === 'professionnel'
     const nomFinal = estPro
       ? `${client.forme_juridique ? client.forme_juridique + ' ' : ''}${client.raison_sociale || ''}`.trim()
-      : client.nom
+      : (client.nom || '').trim().toUpperCase()   // NOM toujours en majuscules (listes, PDF)
 
     const { error } = await supabase.from('clients').update({
       civilite:             client.civilite,
       nom:                  nomFinal,
       prenom:               estPro ? '' : client.prenom,
-      nom2:                 estPro ? null : (client.nom2 || null),
+      nom2:                 estPro ? null : (client.nom2?.trim().toUpperCase() || null),
       prenom2:              estPro ? null : (client.prenom2 || null),
       forme_juridique:      estPro ? (client.forme_juridique || null) : null,
       raison_sociale:       estPro ? client.raison_sociale : null,
