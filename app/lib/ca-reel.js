@@ -14,7 +14,7 @@
 // pour que la déduction apporteur s'applique. À périmètre égal, les 3 pages
 // (dashboard, stats, finances) affichent le même montant.
 // ─────────────────────────────────────────────────────────────────────────────
-import { calculateDossierFinance, calculateDevisFinance, getSignedDevis, calculateSoldeAmoReel } from './finance'
+import { calculateDossierFinance, calculateDevisFinance, getSignedDevis, calculateSoldeAmoReel, calculateCourtageReel } from './finance'
 
 export const normDossier = (d) => ({
   ...d,
@@ -40,6 +40,19 @@ export const fraisEncaisses = (dossier, suivi) =>
   dossier?.frais_statut === 'regle' ||
   (suivi || []).some(s => s.type_echeance === 'frais_consultation' && s.statut_client === 'regle')
 
+// Ligne apporteur (finance.js) qui correspond à une ligne de règlement du suivi :
+//   • devis_id renseigné → la ligne de CE devis (mode par devis, règlement par lot) ;
+//   • ni devis ni artisan → la ligne unique (total chantier ou sur honoraires) ;
+//   • ancien règlement par artisan (avant le 26/11) → la ligne du devis de cet artisan.
+export function ligneApporteur(lines, sf, dossier) {
+  if (sf.devis_id) return lines.find(l => l.devisId === sf.devis_id)
+  if (sf.artisan_id == null) return lines.find(l => l.type === 'total_chantier_ht' || l.type === 'honoraires')
+  return lines.find(l => {
+    const dv = (dossier.devis_artisans || []).find(x => x.id === l.devisId)
+    return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id
+  })
+}
+
 // mode 'agence' = net (parts agentes incluses) ; 'societe' = net − parts agentes.
 export function computeCAMensuel(dossiers, annee, mode = 'agence') {
   const soc = mode === 'societe'
@@ -59,8 +72,8 @@ export function computeCAMensuel(dossiers, annee, mode = 'agence') {
       const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
       add(sf?.date_paiement || nd.date_signature_contrat, fin.frais.net, fin.frais.parts.agente)
     }
-    const sfC = suivi.find(s => s.type_echeance === 'honoraires_courtage')
-    if (sfC?.statut_client === 'regle') add(sfC.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.net, fin.honoraires.courtage.parts.agente)
+    // Courtage : montant figé + suppléments TS, chacun à sa date d'encaissement.
+    for (const t of calculateCourtageReel({ ...nd, suivi_financier: suivi }).tranches) add(t.date_paiement || nd.date_signature_contrat, t.net, t.parts.agente)
     const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
     if (soldeAmoR.hasTranches) {
       for (const t of soldeAmoR.tranches) add(t.date_paiement || nd.date_fin_chantier, t.net, t.parts?.agente)
@@ -81,12 +94,7 @@ export function computeCAMensuel(dossiers, annee, mode = 'agence') {
     for (const sf of suivi.filter(s => s.type_echeance === 'apporteur_agente' && s.statut_ctp === 'rembourse' && s.date_paiement)) {
       const dt = new Date(sf.date_paiement)
       if (dt.getFullYear() !== annee) continue
-      const ligne = sf.artisan_id == null
-        ? apporteurLines.find(l => l.type === 'total_chantier_ht')
-        : apporteurLines.find(l => {
-            const dv = (d.devis_artisans || []).find(x => x.id === l.devisId)
-            return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id
-          })
+      const ligne = ligneApporteur(apporteurLines, sf, d)
       if (ligne?.totalHT) monthly[dt.getMonth() + 1] = (monthly[dt.getMonth() + 1] || 0) - ligne.totalHT
     }
   }
@@ -112,8 +120,7 @@ export function computeRoyalties(dossiers, annee) {
       const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
       add(sf?.date_paiement || nd.date_signature_contrat, fin.frais.royalties, 'frais')
     }
-    const sfC = suivi.find(s => s.type_echeance === 'honoraires_courtage')
-    if (sfC?.statut_client === 'regle') add(sfC.date_paiement || nd.date_signature_contrat, fin.honoraires.courtage.royalties, 'honoraires')
+    for (const t of calculateCourtageReel({ ...nd, suivi_financier: suivi }).tranches) add(t.date_paiement || nd.date_signature_contrat, t.royalties, 'honoraires')
     const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
     if (soldeAmoR.hasTranches) {
       for (const t of soldeAmoR.tranches) add(t.date_paiement || nd.date_fin_chantier, t.royalties, 'honoraires')
@@ -146,8 +153,7 @@ export function computeCABreakdown(dossiers, annee) {
       const sf = suivi.find(s => s.type_echeance === 'frais_consultation')
       if (inYear(sf?.date_paiement || nd.date_signature_contrat)) b.frais += fin.frais.net
     }
-    const sfC = suivi.find(s => s.type_echeance === 'honoraires_courtage')
-    if (sfC?.statut_client === 'regle' && inYear(sfC.date_paiement || nd.date_signature_contrat)) b.honoraires += fin.honoraires.courtage.net
+    for (const t of calculateCourtageReel({ ...nd, suivi_financier: suivi }).tranches) if (inYear(t.date_paiement || nd.date_signature_contrat)) b.honoraires += t.net
     const soldeAmoR = calculateSoldeAmoReel({ ...nd, suivi_financier: suivi })
     if (soldeAmoR.hasTranches) {
       for (const t of soldeAmoR.tranches) if (inYear(t.date_paiement || nd.date_fin_chantier)) b.honoraires += t.net
@@ -163,9 +169,7 @@ export function computeCABreakdown(dossiers, annee) {
     const apporteurLines = fin.apporteur?.lines || []
     for (const sf of suivi.filter(s => s.type_echeance === 'apporteur_agente' && s.statut_ctp === 'rembourse' && s.date_paiement)) {
       if (!inYear(sf.date_paiement)) continue
-      const ligne = sf.artisan_id == null
-        ? apporteurLines.find(l => l.type === 'total_chantier_ht')
-        : apporteurLines.find(l => { const dv = (d.devis_artisans || []).find(x => x.id === l.devisId); return (dv?.artisan_id || dv?.artisan?.id) === sf.artisan_id })
+      const ligne = ligneApporteur(apporteurLines, sf, d)
       if (ligne?.totalHT) b.apporteur += ligne.totalHT
     }
   }

@@ -22,6 +22,7 @@ import { salutationClient, nomClientPourArtisan, libelleRdv, destinatairesRappel
 import { signatureComplete } from '../../../lib/email-signature'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { buildRecapitulatifDocument } from '../../../lib/pdf/recapitulatifDocument.js'
+import { aujourdhuiParis, parisLocalToInstant } from '../../../lib/dates'
 
 let _supabaseAdmin
 function getSupabaseAdmin() {
@@ -29,10 +30,11 @@ function getSupabaseAdmin() {
   return _supabaseAdmin
 }
 
-function today() { return new Date().toISOString().slice(0, 10) }
+function today() { return aujourdhuiParis() }
 
+// Date du jour de Paris + n jours (arithmétique sur une date pure, sans fuseau).
 function dateInDays(n) {
-  const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10)
+  const d = new Date(`${aujourdhuiParis()}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10)
 }
 
 function prenomNom(row) {
@@ -802,8 +804,10 @@ export async function GET(req) {
         dossiers(reference, adresse_chantier, profiles!referente_id(email, prenom, nom, telephone, role, agence_id),
           clients(email, nom, prenom, civilite, nom2))
       `)
-      .gte('date_heure', `${tomorrow}T00:00:00`)
-      .lte('date_heure', `${tomorrow}T23:59:59`)
+      // Bornes de « demain » en heure de PARIS (date_heure est un timestamptz) : sans
+      // fuseau, Postgres lisait ces bornes en UTC et décalait la journée d'1 à 2 h.
+      .gte('date_heure', parisLocalToInstant(`${tomorrow}T00:00`))
+      .lt('date_heure', parisLocalToInstant(`${dateInDays(2)}T00:00`))
 
     for (const rdv of rdvs || []) {
       const client = rdv.dossiers?.clients

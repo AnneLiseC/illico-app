@@ -249,7 +249,7 @@ function ChantierPreview({ d, onOpen, onBack, backLabel, isMobile, onRefresh }) 
   // page dossier. Pas de colonne `archive` : on réutilise l'onglet existant.
   const estArchive = s === 'annule' || s === 'termine'
   const annulerChantier = async () => {
-    if (!confirm('Annuler ce chantier ? Il passera dans les Archivés (réversible via « Ré-ouvrir »).')) return
+    if (!confirm('Annuler ce chantier ? Il passera dans les Archivés (réversible via « Ré-ouvrir »).\n\nLes devis non signés passeront en « refusé » (les devis signés ne bougent pas).')) return
     setMenuBusy(true)
     const { error } = await supabase.from('dossiers').update({ statut: 'annule' }).eq('id', d.id)
     setMenuBusy(false); setMenuOuvert(false)

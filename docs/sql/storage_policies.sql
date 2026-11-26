@@ -72,16 +72,21 @@ CREATE POLICY "Lecture photos" ON storage.objects
           OR ((d.referente_id = (SELECT auth.uid() AS uid)) AND (d.agence_id = (SELECT get_my_agence_id() AS get_my_agence_id))))))))
   );
 
--- Branche CLIENT : un client lit les photos de SON dossier (profiles.client_id).
+-- Branche CLIENT : un client lit UNIQUEMENT les photos référencées dans la table
+-- `photos` de SES dossiers encore accessibles (expiration incluse). Durci le 26/11/2026
+-- (docs/sql/fix_client_read_photos.sql) : avant, tout chantiers/<id>/ était lisible,
+-- y compris les photos de notes du CR (/cr/).
 DROP POLICY IF EXISTS "client_read_photos" ON storage.objects;
 CREATE POLICY "client_read_photos" ON storage.objects
   FOR SELECT TO public
   USING (
-    (bucket_id = 'photos'::text)
-    AND (EXISTS (
-      SELECT 1 FROM (profiles me JOIN dossiers d ON ((d.client_id = me.client_id)))
-      WHERE ((me.id = auth.uid()) AND (me.role = 'client'::text) AND (me.client_id IS NOT NULL)
-        AND ((d.id)::text = split_part(objects.name, '/'::text, 2)))))
+    bucket_id = 'photos'::text
+    AND (SELECT get_my_role()) = 'client'
+    AND EXISTS (
+      SELECT 1 FROM public.photos p
+      WHERE p.url = objects.name
+        AND p.dossier_id IN (SELECT mes_dossiers_client())
+    )
   );
 
 -- ----------------------------------------------------------------------------
