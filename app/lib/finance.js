@@ -270,6 +270,10 @@ export function calculateCourtageTS(dossier) {
 
   const { ttcApres } = sousTotalApresPivot(devisAssietteHonoraires(getSignedDevis(dossier)), pivot)
   const montantTSttc = round2(ttcApres * taux)           // courtage dû sur les TS
+  // Courtage FIGÉ : l'initial est le montant encaissé, pas un recalcul (cohérent avec
+  // honorairesCore / calculateCourtageReel). Sans montant gelé → calcul historique.
+  const gele = getCourtageGele(dossier)
+  if (gele !== null) return { montantTSttc, courtageInitialTtc: gele, courtageTotalTtc: round2(gele + montantTSttc) }
   const courtageInitialTtc = round2(courtageTotalTtc - montantTSttc) // base hors TS × taux
   return { montantTSttc, courtageInitialTtc, courtageTotalTtc }
 }
