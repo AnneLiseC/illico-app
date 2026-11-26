@@ -39,13 +39,13 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tsdav": "^2.3.0",
-    "zod": "4.3.6"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "eslint": "^9",
-    "globals": "^14.0.0",
     "eslint-config-next": "^16.2.0",
+    "globals": "^14.0.0",
     "tailwindcss": "^4",
     "vitest": "~3.2.7"
   },

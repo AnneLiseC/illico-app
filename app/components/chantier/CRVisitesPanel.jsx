@@ -1416,10 +1416,10 @@ function ActionPhotos({ action, dossierId, setAnnot, setErreur }) {
             {(dossierPhotos || []).map(p => (
               <button key={p.id} type="button" onClick={() => attacher(p)} title={`Ajouter (${p.categorie || 'photo'})`}
                 style={{ flex: '0 0 auto', border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 {/* loading="lazy" : ne télécharge que les vignettes visibles (bande scrollable) →
                     évite la rafale de requêtes storage qui déclenchait des 429 sur un dossier
                     avec beaucoup de photos. */}
+                {/* eslint-disable-next-line @next/next/no-img-element -- URL signée Supabase : next/image inadapté */}
                 <img src={p.thumb || p.full} alt="" loading="lazy" decoding="async"
                   onError={e => { if (p.full && e.currentTarget.src !== p.full) e.currentTarget.src = p.full }}
                   style={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--ink-200)' }} />
