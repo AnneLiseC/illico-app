@@ -1150,7 +1150,7 @@ export default function Finances() {
 
   // acompte_artisan est PAR DEVIS depuis LOT 3 : quand devisId est fourni, la ligne
   // se trouve par devis_id (un artisan peut avoir plusieurs lots). Les échéances sans
-  // devis (facture_finale, apporteur_agente, courtage, AMO) restent trouvées par artisan.
+  // devis (courtage, AMO…) restent trouvées sans devis_id.
   const getSuivi = (d, type, artisanId = null, devisId = null) =>
     (d.suivi_financier || []).find(
       s => s.type_echeance === type

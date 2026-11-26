@@ -1989,8 +1989,8 @@ export default function FicheChantier({ params }) {
       if (nouvelleFacture.statut === 'paye') {
         const libelleNorm = (nouvelleFacture.libelle === 'Autre' ? nouvelleFacture.libelle_autre : nouvelleFacture.libelle || '').toLowerCase()
         const typeEch = libelleNorm.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
-        // acompte_artisan = clé par devis ; facture_finale = cas b (sans devis).
-        const devisIdSuivi = typeEch === 'acompte_artisan' ? devisId : null
+        // acompte_artisan ET facture_finale = clé par devis (un artisan peut avoir plusieurs lots).
+        const devisIdSuivi = devisId
         await majSuiviAvecArtisan(typeEch, artisanId, 'statut_client', 'regle', devisIdSuivi)
         if (nouvelleFacture.date_paiement) {
           await majSuiviAvecArtisan(typeEch, artisanId, 'date_paiement', nouvelleFacture.date_paiement, devisIdSuivi)
@@ -2042,8 +2042,8 @@ export default function FicheChantier({ params }) {
       const libelle = (facture.libelle || '').toLowerCase()
       const typeEch = libelle.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
       const statutSuivi = newStatut === 'paye' ? 'regle' : 'en_attente'
-      // acompte_artisan = clé par devis (facture.devis_id) ; facture_finale = cas b.
-      const devisIdSuivi = typeEch === 'acompte_artisan' ? facture.devis_id : null
+      // acompte_artisan ET facture_finale = clé par devis (facture.devis_id).
+      const devisIdSuivi = facture.devis_id || null
       await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'statut_client', statutSuivi, devisIdSuivi)
       if (newStatut === 'paye' && datePaye) {
         await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', datePaye, devisIdSuivi)
@@ -2063,7 +2063,7 @@ export default function FicheChantier({ params }) {
     if (facture?.statut === 'paye' && facture?.artisan_id && d) {
       const libelle = (facture.libelle || '').toLowerCase()
       const typeEch = libelle.includes('acompte') ? 'acompte_artisan' : 'facture_finale'
-      const devisIdSuivi = typeEch === 'acompte_artisan' ? facture.devis_id : null
+      const devisIdSuivi = facture.devis_id || null
       await majSuiviAvecArtisan(typeEch, facture.artisan_id, 'date_paiement', d, devisIdSuivi)
     }
   }
@@ -3034,11 +3034,13 @@ export default function FicheChantier({ params }) {
   const acomptesRecus  = devisSignes.filter(dv => suiviFinancier.find(x =>
     x.type_echeance === 'acompte_artisan' && x.devis_id === dv.id && x.statut_illico === 'recu')).length
   const facturesTotal  = devisSignes.length
+  // Facture finale : PAR DEVIS (26/11/2026) et réglée côté client (statut_client) — l'ancien
+  // test sur statut_illico n'était jamais vrai pour cette échéance (compteur bloqué à 0).
   const facturesPayees = devisSignes.filter(dv => suiviFinancier.find(x =>
-    x.type_echeance === 'facture_finale' && x.artisan_id === dv.artisan_id && x.statut_illico === 'recu')).length
+    x.type_echeance === 'facture_finale' && x.devis_id === dv.id && x.statut_client === 'regle')).length
 
   // Clé d'unicité : acompte_artisan est désormais PAR DEVIS (devisId fourni) ; les
-  // échéances sans devis (facture_finale, apporteur_agente) restent PAR ARTISAN
+  // échéances sans devis (apporteur en mode total/honoraires) restent sans devis_id
   // (devisId null → devis_id IS NULL, cas b). Sans ce distinguo, maybeSingle crashe
   // « multiple rows » sur un artisan à plusieurs devis débloqués.
   const majSuiviAvecArtisan = async (type, artisanId, champ, valeur, devisId = null) => {
