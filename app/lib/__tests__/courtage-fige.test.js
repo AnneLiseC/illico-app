@@ -62,3 +62,14 @@ describe('calculateCourtageReel', () => {
     expect(r.recognizedNet).toBe(Math.round((550 * 0.95 + 250 * 0.95) * 100) / 100)
   })
 })
+
+import { calculateCourtageTS } from '../finance.js'
+describe('calculateCourtageTS — courtage figé', () => {
+  it('initial = montant encaissé, total = encaissé + TS', () => {
+    const d = dossier({
+      devis_artisans: [dv({ montant_ttc: 13000 }), dv({ id: 'dv2', montant_ttc: 5000, date_signature: '2026-03-01' })],
+      suivi_financier: [courtage()],
+    })
+    expect(calculateCourtageTS(d)).toEqual({ montantTSttc: 300, courtageInitialTtc: 660, courtageTotalTtc: 960 })
+  })
+})

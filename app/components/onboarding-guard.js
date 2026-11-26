@@ -14,6 +14,14 @@ function isExempt(pathname) {
   )
 }
 
+// Pages qu'un client connecté peut ouvrir : son espace, l'authentification et les
+// pages publiques. Tout le reste le renvoie vers /espace-client.
+function pageAutoriseeClient(pathname) {
+  return pathname === '/' || pathname === '/cgu' || pathname === '/confidentialite' ||
+    pathname?.startsWith('/espace-client') || pathname?.startsWith('/auth/') ||
+    pathname?.startsWith('/login')
+}
+
 // Couche EN PLUS des gardes par-page : redirige un utilisateur connecté SANS profil
 // (admin invité qui n'a pas encore créé sa société) vers /onboarding, partout dans l'app.
 // Ne touche pas la gestion !user (les pages redirigent déjà vers /login).
@@ -41,7 +49,11 @@ export default function OnboardingGuard({ children }) {
       // A un profil mais se trouve sur /onboarding → rien à y faire, on renvoie.
       if (pathname === '/onboarding') {
         router.replace(profile?.role === 'client' ? '/espace-client' : '/dashboard')
+        return
       }
+      // Un CLIENT n'a rien à faire dans les pages de l'agence (finances, planning,
+      // paramètres…). La RLS protège déjà les données ; ceci évite qu'il voie l'écran.
+      if (profile?.role === 'client' && !pageAutoriseeClient(pathname)) router.replace('/espace-client')
     }
   }, [profileStatus, user, profile?.role, pathname, router, isSuperAdmin])
 
