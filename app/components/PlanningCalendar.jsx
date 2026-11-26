@@ -38,8 +38,8 @@ export default function PlanningCalendar({ calendarView, events, onDateClick, on
       dateClick={onDateClick}
       eventClick={onEventClick}
       height="calc(100vh - 180px)"
-      slotMinTime="06:00:00"
-      slotMaxTime="23:00:00"
+      slotMinTime="07:00:00"
+      slotMaxTime="20:00:00"
       slotDuration="00:30:00"
       allDayText="Journée"
       nowIndicator={true}

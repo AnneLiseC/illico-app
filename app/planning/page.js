@@ -51,6 +51,22 @@ const ARTISAN_COLORS = [COLORS.violet, COLORS.coral, COLORS.mint, COLORS.gold, C
 // ⚠️ Ne PAS passer par lib/dates.parseUTC : il ajoute 'Z' et casserait une valeur déjà suffixée +00:00.
 // Nom du client affiché partout dans le planning (source unique, NOM en majuscules).
 const nomCli = (c) => c ? formatNomClient(c, { upper: true }) : ''
+// Repli des champs secondaires des formulaires. `force` = toujours déplié (édition, ou
+// aucun agenda configuré : l'avertissement R4 ne doit jamais être caché).
+function PlusOptions({ ouvert, force, onToggle, resume, alerte, children }) {
+  if (force) return <>{children}</>
+  return (
+    <div style={{display:'flex', flexDirection:'column', gap:16, borderTop:'1px solid var(--ink-100)', paddingTop:12}}>
+      <button type="button" onClick={onToggle}
+        style={{display:'flex', gap:6, alignItems:'baseline', flexWrap:'wrap', background:'none', border:'none', padding:0, cursor:'pointer', font:'inherit', textAlign:'left'}}>
+        <span style={{fontSize:12.5, fontWeight:700, color:'var(--brand-700)'}}>{ouvert ? '▾' : '▸'} Plus d&apos;options</span>
+        {resume && <span style={{fontSize:12, color: alerte ? '#b45309' : 'var(--ink-500)'}}>· {resume}</span>}
+      </button>
+      {ouvert && children}
+    </div>
+  )
+}
+
 const fmtDate    = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'Europe/Paris' }) : '—'
 const fmtHeure   = (d) => d ? new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' }) : '—'
 const fmtDateLong = (d) => d ? new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' }) : '—'
@@ -66,8 +82,7 @@ export default function Planning() {
   const [devis, setDevis]                 = useState([])
   const [loading, setLoading]             = useState(true)
 
-  const [vue, setVue]                 = useState('tous')
-  const [typeFiltre, setTypeFiltre]   = useState('')
+  const [vue, setVue]                 = useState('moi')   // 'moi' | 'agence'
   const [artisanFiltre, setArtisanFiltre] = useState('')
   const [agenteFiltre, setAgenteFiltre]   = useState('')
   const [recherche, setRecherche]         = useState('')
@@ -85,7 +100,7 @@ export default function Planning() {
   const [fournisseursConnectes, setFournisseursConnectes] = useState([])
   const [syncMessage, setSyncMessage]         = useState(null) // { text, ok }
   const [calendarView, setCalendarView]       = useState('timeGridWeek')
-  const [quickMenu, setQuickMenu]             = useState(null) // { date, x, y }
+  const [optionsOuvertes, setOptionsOuvertes] = useState(false) // « Plus d'options » des formulaires
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 640) {
@@ -290,9 +305,14 @@ export default function Planning() {
 
   // ── ÉVÉNEMENTS CALENDRIER ──────────────────────────────────────────────────
 
+  // « Mes RDV » : ce qui touche MES dossiers ; pour un RDV sans dossier, ceux que j'ai créés.
+  const estAMoi = useCallback(
+    (x) => x.dossier ? x.dossier.referente_id === profile?.id : (x.owner_id === profile?.id || x.created_by === profile?.id),
+    [profile?.id]
+  )
+
   const evenementsRdv = useMemo(() => rdvsScoped
-    .filter(r => vue === 'tous' || (vue === 'moi' && r.dossier?.referente_id === profile?.id) || (vue === 'artisan' && r.artisan_id))
-    .filter(r => !typeFiltre   || r.type_rdv === typeFiltre)
+    .filter(r => vue === 'agence' || estAMoi(r))
     .filter(r => !artisanFiltre || r.artisan_id === artisanFiltre)
     .filter(r => !agenteFiltre  || r.dossier?.referente_id === agenteFiltre)
     .map(r => {
@@ -312,9 +332,10 @@ export default function Planning() {
         backgroundColor: cfg.color, borderColor: cfg.color, textColor: '#fff',
         extendedProps: { type: 'rdv', data: r, cfg },
       }
-    }), [rdvsScoped, vue, typeFiltre, artisanFiltre, agenteFiltre, profile?.id])
+    }), [rdvsScoped, vue, artisanFiltre, agenteFiltre, estAMoi])
 
   const evenementsInterventions = useMemo(() => interventionsScoped
+    .filter(i => vue === 'agence' || estAMoi(i))
     .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
     .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
     .flatMap(i => {
@@ -333,16 +354,17 @@ export default function Planning() {
         const endD = new Date(d + 'T00:00:00'); endD.setDate(endD.getDate() + 1)
         return { id: 'int-' + i.id + '-' + idx, title: titre, start: d, end: endD.toISOString().slice(0, 10), backgroundColor: color + '28', borderColor: color, textColor: color, allDay: true, extendedProps: { type: 'intervention', data: i } }
       })
-    }), [interventionsScoped, artisanFiltre, agenteFiltre, couleurArtisan])
+    }), [interventionsScoped, vue, estAMoi, artisanFiltre, agenteFiltre, couleurArtisan])
 
   const evenementsDates = useMemo(() => dossiersScoped
+    .filter(d => vue === 'agence' || d.referente_id === profile?.id)
     .filter(d => !agenteFiltre || d.referente_id === agenteFiltre)
     .flatMap(d => {
       const evts = []
       if (d.date_demarrage_chantier) evts.push({ id: 'start-' + d.id, title: `▶ ${d.reference}`, start: d.date_demarrage_chantier, allDay: true, backgroundColor: '#ECFDF5', borderColor: COLORS.mint, textColor: COLORS.mint, extendedProps: { type: 'date_cle', data: d } })
       if (d.date_fin_chantier) evts.push({ id: 'end-' + d.id, title: `■ ${d.reference}`, start: d.date_fin_chantier, allDay: true, backgroundColor: '#FFF7ED', borderColor: COLORS.amber, textColor: COLORS.gold, extendedProps: { type: 'date_cle', data: d } })
       return evts
-    }), [dossiersScoped, agenteFiltre])
+    }), [dossiersScoped, vue, profile?.id, agenteFiltre])
 
   // La recherche filtre le CALENDRIER (avant : elle ne changeait qu'un compteur).
   const tousEvenements = useMemo(() => {
@@ -357,20 +379,20 @@ export default function Planning() {
 
   const agendaItems = useMemo(() => {
     const maintenant = new Date()
-    const dans30j = new Date(maintenant.getTime() + 30 * 24 * 3600000)
+    const dans7j = new Date(maintenant.getTime() + 7 * 24 * 3600000)
 
     const rdvItems = rdvsScoped
-      .filter(r => { const d = new Date(r.date_heure); return d >= maintenant && d <= dans30j })
+      .filter(r => { const d = new Date(r.date_heure); return d >= maintenant && d <= dans7j })
+      .filter(r => vue === 'agence' || estAMoi(r))
       .filter(r => !artisanFiltre || r.artisan_id === artisanFiltre)
       .filter(r => !agenteFiltre  || r.dossier?.referente_id === agenteFiltre)
-      .filter(r => !typeFiltre    || r.type_rdv === typeFiltre)
       .map(r => {
         const cfg = TYPE_CONFIG[r.type_rdv] || TYPE_CONFIG.visite_technique_client
         const client = nomCli(r.dossier?.client)
         return {
           id: r.id, type: 'rdv', date: new Date(r.date_heure),
           titre: r.type_rdv === 'autres' ? (r.titre || cfg.label) : `${cfg.short} · ${client}`,
-          sous: r.type_rdv === 'visite_technique_artisan' && r.artisan?.entreprise ? `avec ${r.artisan.entreprise}` : fmtHeure(r.date_heure),
+          sous: r.type_rdv === 'visite_technique_artisan' && r.artisan?.entreprise ? `${fmtHeure(r.date_heure)} · avec ${r.artisan.entreprise}` : fmtHeure(r.date_heure),
           color: cfg.color, data: r,
         }
       })
@@ -380,7 +402,8 @@ export default function Planning() {
       ? ([...(i.jours_specifiques || [])].sort().find(j => new Date(j + 'T23:59:59') >= maintenant) || null)
       : i.date_debut
     const intItems = interventionsScoped
-      .filter(i => { const j = prochainJour(i); if (!j) return false; const d = new Date(j); return d >= new Date(maintenant.toDateString()) && d <= dans30j })
+      .filter(i => { const j = prochainJour(i); if (!j) return false; const d = new Date(j); return d >= new Date(maintenant.toDateString()) && d <= dans7j })
+      .filter(i => vue === 'agence' || estAMoi(i))
       .filter(i => !artisanFiltre || i.artisan_id === artisanFiltre)
       .filter(i => !agenteFiltre  || i.dossier?.referente_id === agenteFiltre)
       .map(i => {
@@ -396,47 +419,57 @@ export default function Planning() {
     return [...rdvItems, ...intItems]
       .filter(item => !recherche || [item.titre, item.sous].join(' ').toLowerCase().includes(recherche.toLowerCase()))
       .sort((a, b) => a.date - b.date)
-  }, [rdvsScoped, interventionsScoped, artisanFiltre, agenteFiltre, typeFiltre, recherche, couleurArtisan])
+  }, [rdvsScoped, interventionsScoped, vue, estAMoi, artisanFiltre, agenteFiltre, recherche, couleurArtisan])
 
   // ── HANDLERS ──────────────────────────────────────────────────────────────
 
+  // Clic sur un jour / un créneau : on ouvre directement le formulaire, date et heure
+  // pré-remplies (heure du créneau en vue semaine, 9h en vue mois). La bascule
+  // RDV / Intervention est en haut du formulaire.
   const handleDateClick = (info) => {
-    if (modalType === 'intervention' && formIntervention.type_intervention === 'jours_specifiques') {
-      const date = info.dateStr.slice(0, 10)
-      setFormIntervention(f => ({ ...f, jours_specifiques: f.jours_specifiques.includes(date) ? f.jours_specifiques.filter(j => j !== date) : [...f.jours_specifiques, date] }))
-      return
-    }
-    // Mini-menu : choisir entre RDV et Intervention
-    const rect = info.jsEvent?.target?.getBoundingClientRect?.() || {}
-    const x = Math.min(info.jsEvent?.clientX ?? 200, window.innerWidth - 200)
-    const y = Math.min(info.jsEvent?.clientY ?? 200, window.innerHeight - 120)
-    setQuickMenu({ date: info.dateStr, x, y })
+    const date = info.dateStr.slice(0, 10)
+    const heure = !info.allDay && info.dateStr.length >= 16 ? info.dateStr.slice(11, 16) : '09:00'
+    setElementSelectionne(null); setModeEdition(false)
+    setFormRdv(f => ({ ...f, date_heure: `${date}T${heure}` }))
+    setFormIntervention(f => ({ ...f, date_debut: date }))
+    setModalType('rdv'); setModalOuvert(true)
   }
 
-  const ouvrirDepuisMenu = (type) => {
-    if (!quickMenu) return
-    const date = quickMenu.date.slice(0, 10)
-    setElementSelectionne(null); setModeEdition(false); setQuickMenu(null)
-    if (type === 'rdv') {
-      setFormRdv(f => ({ ...f, date_heure: date + 'T09:00' }))
-      setModalType('rdv'); setModalOuvert(true)
-    } else {
-      setFormIntervention(f => ({ ...f, date_debut: date }))
-      setModalType('intervention'); setModalOuvert(true)
-    }
+  const ouvrirNouveau = () => {
+    setElementSelectionne(null); setModeEdition(false); setModalType('rdv'); setModalOuvert(true)
   }
 
-  const handleEventClick = (info) => {
-    const { type, data, cfg } = info.event.extendedProps
-    setElementSelectionne({ type, data, cfg }); setModalType(type); setModeEdition(false)
+  // Bascule RDV ⇄ Intervention en création : la date déjà saisie suit.
+  const basculerType = (type) => {
+    if (type === modalType) return
+    if (type === 'intervention' && formRdv.date_heure) setFormIntervention(f => ({ ...f, date_debut: f.date_debut || formRdv.date_heure.slice(0, 10) }))
+    if (type === 'rdv' && formIntervention.date_debut) setFormRdv(f => ({ ...f, date_heure: f.date_heure || `${formIntervention.date_debut}T09:00` }))
+    setModalType(type)
+  }
+
+  const ouvrirElement = (type, data) => {
+    setElementSelectionne({ type, data, cfg: type === 'rdv' ? TYPE_CONFIG[data.type_rdv] : undefined }); setModalType(type); setModeEdition(false)
     if (type === 'rdv') setFormRdv({ dossier_id: data.dossier_id, type_rdv: data.type_rdv, date_heure: data.date_heure ? instantToParisLocal(data.date_heure) : '', duree_minutes: data.duree_minutes || 60, artisan_id: data.artisan_id || '', artisans_ids: idsArtisansDepuisRdv(data), prevenir_client: data.prevenir_client ?? null, notes: data.notes || '', titre: data.titre || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
     else if (type === 'intervention') setFormIntervention({ dossier_id: data.dossier_id, artisan_id: data.artisan_id, type_intervention: data.type_intervention, date_debut: data.date_debut || '', date_fin: data.date_fin || '', jours_specifiques: data.jours_specifiques || [], notes: data.notes || '', agence_id: data.agence_id || '', cible_id: data.cible_id || '' })
     else if (type === 'date_cle') setFormDateCle({ date_demarrage_chantier_manuel: data.date_demarrage_chantier_manuel || '', date_fin_chantier: data.date_fin_chantier || '' })
     setModalOuvert(true)
   }
 
+  const handleEventClick = (info) => {
+    const { type, data } = info.event.extendedProps
+    ouvrirElement(type, data)
+  }
+
+  // Ligne de résumé de « Plus d'options » : l'agenda visé se lit sans ouvrir.
+  const resumeOptions = (cibleId, nbConviees) => {
+    const cible = cibles.find(c => c.id === cibleId)
+    const parts = [cible ? `Agenda : ${libelleCible(cible)}` : 'aucun agenda']
+    if (nbConviees) parts.push(`${nbConviees} entreprise${nbConviees > 1 ? 's' : ''} conviée${nbConviees > 1 ? 's' : ''}`)
+    return parts.join(' · ')
+  }
+
   const fermerModal = () => {
-    setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur(''); setDemandeSuppr(false); setDemandeModif(false)
+    setModalOuvert(false); setElementSelectionne(null); setModeEdition(false); setErreur(''); setDemandeSuppr(false); setDemandeModif(false); setOptionsOuvertes(false)
     setFormRdv({ dossier_id: '', type_rdv: 'visite_technique_client', date_heure: '', duree_minutes: 60, artisan_id: '', artisans_ids: [], prevenir_client: null, notes: '', titre: '', agence_id: '', cible_id: '' })
     setFormIntervention({ dossier_id: '', artisan_id: '', type_intervention: 'periode', date_debut: '', date_fin: '', jours_specifiques: [], notes: '', agence_id: '', cible_id: '' })
     lastAutoCibleRdv.current = ''; lastAutoCibleInt.current = ''
@@ -638,11 +671,6 @@ export default function Planning() {
   const inputCls = "input"
   const labelCls = "eyebrow"
 
-  const rdvCeMois = rdvsScoped.filter(r => {
-    const d = new Date(r.date_heure), m = new Date()
-    return d.getMonth() === m.getMonth() && d.getFullYear() === m.getFullYear()
-  }).length
-
   return (
     <div className="page-enter page-pad" style={{ display:'flex', flexDirection:'column', gap:18, maxWidth:1400, margin:'0 auto' }}>
 
@@ -690,13 +718,8 @@ export default function Planning() {
               Google Calendar
             </button>
           )}
-          <button className="btn btn-ghost"
-            onClick={() => { setModalType('intervention'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}>
-            + Intervention
-          </button>
-          <button className="btn btn-primary"
-            onClick={() => { setModalType('rdv'); setElementSelectionne(null); setModeEdition(false); setModalOuvert(true) }}>
-            + Nouveau RDV
+          <button className="btn btn-primary" onClick={ouvrirNouveau}>
+            + Nouveau
           </button>
         </div>
       </div>
@@ -718,10 +741,10 @@ export default function Planning() {
       {/* ── BARRE FILTRES (carte blanche) ─────────────────────────────── */}
       <div className="card" style={{padding:'12px 16px', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
 
-        {/* Vue (segmented) */}
+        {/* Périmètre : mes dossiers ou toute l'agence */}
         <div style={{display:'flex', gap:4, background:'var(--ink-100)', padding:3, borderRadius:9}}>
-          {[{ k: 'tous', l: 'Tous' }, { k: 'moi', l: 'Mes RDV' }, { k: 'artisan', l: 'Avec artisans' }].map(({ k, l }) => (
-            <button key={k} onClick={() => setVue(k)} style={{
+          {[{ k: 'moi', l: 'Mes RDV' }, { k: 'agence', l: 'Agence' }].map(({ k, l }) => (
+            <button key={k} onClick={() => { setVue(k); if (k === 'moi') setAgenteFiltre('') }} style={{
               padding:'6px 14px', fontSize:12.5, fontWeight:600, borderRadius:7, cursor:'pointer', border:0,
               background: vue === k ? '#fff' : 'transparent',
               color: vue === k ? 'var(--brand-800)' : 'var(--ink-500)',
@@ -730,42 +753,34 @@ export default function Planning() {
           ))}
         </div>
 
-        {/* Type RDV */}
-        <select className="input" value={typeFiltre} onChange={e => setTypeFiltre(e.target.value)} style={{height:34, minWidth:140}}>
-          <option value="">Tous les types</option>
-          {Object.entries(TYPE_CONFIG).map(([k, cfg]) => <option key={k} value={k}>{cfg.label}</option>)}
-        </select>
-
         <select className="input" value={artisanFiltre} onChange={e => setArtisanFiltre(e.target.value)} style={{height:34, minWidth:140}}>
           <option value="">Tous artisans</option>
           {artisans.map(a => <option key={a.id} value={a.id}>{a.entreprise}</option>)}
         </select>
 
-        {profile?.role === 'admin' && (
+        {profile?.role === 'admin' && vue === 'agence' && (
           <select className="input" value={agenteFiltre} onChange={e => setAgenteFiltre(e.target.value)} style={{height:34, minWidth:140}}>
             <option value="">Tous les agents</option>
             {agentes.map(a => <option key={a.id} value={a.id}>{a.prenom} {a.nom}</option>)}
           </select>
         )}
 
-        {(typeFiltre || artisanFiltre || agenteFiltre || vue !== 'tous') && (
-          <button onClick={() => { setTypeFiltre(''); setArtisanFiltre(''); setAgenteFiltre(''); setVue('tous') }}
+        <div style={{position:'relative', flex:'1 1 200px', maxWidth:320}}>
+          <input value={recherche} onChange={e => setRecherche(e.target.value)}
+            placeholder="🔍 Client, artisan, référence…"
+            className="input" style={{width:'100%', height:34}}/>
+          {recherche && (
+            <button onClick={() => setRecherche('')}
+              style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
+          )}
+        </div>
+
+        {(artisanFiltre || agenteFiltre || recherche) && (
+          <button onClick={() => { setArtisanFiltre(''); setAgenteFiltre(''); setRecherche('') }}
             className="btn btn-ghost" style={{fontSize:12}}>
             Réinitialiser
           </button>
         )}
-
-        {/* Légende */}
-        <div style={{marginLeft:'auto', display:'flex', gap:14, fontSize:11.5, color:'var(--ink-500)', flexWrap:'wrap'}}>
-          {Object.entries(TYPE_CONFIG).map(([, cfg]) => (
-            <span key={cfg.label} style={{display:'inline-flex', gap:5, alignItems:'center'}}>
-              <span style={{width:10, height:10, background:cfg.color, borderRadius:3}}/>{cfg.short}
-            </span>
-          ))}
-          <span style={{display:'inline-flex', gap:5, alignItems:'center'}}>
-            <span style={{width:10, height:10, background:`${COLORS.violet}26`, border:`1px solid ${COLORS.violet}`, borderRadius:3}}/>Intervention
-          </span>
-        </div>
       </div>
 
       {/* ── LAYOUT 2 colonnes (calendrier · sidebar à droite) ─────────── */}
@@ -818,60 +833,34 @@ export default function Planning() {
 
         {/* ── SIDEBAR (à droite, style maquette) ─────────────────────── */}
         <aside style={{display:'flex', flexDirection:'column', gap:14, minWidth:0}}>
-
-          {/* KPIs (en haut) — cliquables : raccourcis vue / filtre / navigation */}
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
-            {[
-              { label: 'RDV ce mois', value: rdvCeMois, color: 'var(--brand-600)', title: 'Voir le mois', action: () => setCalendarView('dayGridMonth') },
-              { label: 'Interventions', value: interventionsScoped.length, color: COLORS.violet, title: 'Filtrer sur les artisans', action: () => setVue('artisan') },
-              { label: 'Chantiers actifs', value: dossiersScoped.filter(d => d.date_demarrage_chantier && !d.date_fin_chantier).length, color: COLORS.mint, title: 'Ouvrir les chantiers', action: () => router.push('/chantiers') },
-              { label: 'À venir 30j', value: agendaItems.length, color: COLORS.amber, title: 'Vue liste (agenda)', action: () => setCalendarView('listWeek') },
-            ].map(({ label, value, color, title, action }) => (
-              <button key={label} onClick={action} title={title} className="card row-hover"
-                style={{padding:12, textAlign:'center', cursor:'pointer', font:'inherit', width:'100%'}}>
-                <div className="tnum" style={{fontSize:20, fontWeight:800, color}}>{value}</div>
-                <div className="eyebrow" style={{marginTop:4}}>{label}</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Recherche */}
-          <div style={{position:'relative'}}>
-            <input value={recherche} onChange={e => setRecherche(e.target.value)}
-              placeholder="Rechercher client, artisan…"
-              className="input" style={{width:'100%'}}/>
-            {recherche && (
-              <button onClick={() => setRecherche('')}
-                style={{position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', fontSize:16, lineHeight:1}}>×</button>
-            )}
-          </div>
-
-          {/* Filtres rapides (agentes) — admin seulement */}
-          {profile?.role === 'admin' && agentes.length > 0 && (
-            <div className="card" style={{padding:18}}>
-              <div className="eyebrow" style={{marginBottom:10}}>Filtres rapides</div>
-              <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                {agentes.map(a => {
-                  const active = agenteFiltre === a.id
-                  const initials = `${a.prenom?.[0] || ''}${a.nom?.[0] || ''}`.toUpperCase()
+          <div className="card" style={{padding:16}}>
+            <div className="eyebrow" style={{marginBottom:10}}>Cette semaine</div>
+            {agendaItems.length === 0 ? (
+              <div style={{fontSize:12.5, color:'var(--ink-500)'}}>Rien de prévu dans les 7 prochains jours.</div>
+            ) : (
+              <div style={{display:'flex', flexDirection:'column', gap:2}}>
+                {agendaItems.map((item, idx) => {
+                  const jour = item.date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })
+                  const jourPrec = idx > 0 ? agendaItems[idx - 1].date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'Europe/Paris' }) : null
                   return (
-                    <button key={a.id} onClick={() => setAgenteFiltre(active ? '' : a.id)} style={{
-                      display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8,
-                      border:'1px solid', borderColor: active ? 'var(--brand-500)' : 'var(--ink-200)',
-                      background: active ? 'var(--brand-50)' : '#fff',
-                      cursor:'pointer', fontSize:12, fontWeight:600, color:'var(--ink-700)', textAlign:'left',
-                    }}>
-                      <span style={{
-                        width:22, height:22, borderRadius:'50%', background:'var(--brand-500)', color:'#fff',
-                        fontSize:11, fontWeight:700, display:'grid', placeItems:'center', flexShrink:0,
-                      }}>{initials}</span>
-                      <span>{a.prenom} {a.nom}</span>
-                    </button>
+                    <div key={item.type + item.id}>
+                      {jour !== jourPrec && (
+                        <div style={{fontSize:11, fontWeight:700, color:'var(--ink-500)', textTransform:'capitalize', margin: idx ? '10px 0 4px' : '0 0 4px'}}>{jour}</div>
+                      )}
+                      <button onClick={() => ouvrirElement(item.type, item.data)} className="row-hover"
+                        style={{width:'100%', display:'flex', gap:8, alignItems:'flex-start', padding:'6px 8px', borderRadius:8, border:'none', background:'none', cursor:'pointer', textAlign:'left', font:'inherit'}}>
+                        <span style={{width:4, alignSelf:'stretch', borderRadius:2, background:item.color, flexShrink:0}}/>
+                        <span style={{minWidth:0}}>
+                          <span style={{display:'block', fontSize:12.5, fontWeight:600, color:'var(--ink-900)'}}>{item.titre}</span>
+                          <span style={{display:'block', fontSize:11.5, color:'var(--ink-500)'}}>{item.sous}</span>
+                        </span>
+                      </button>
+                    </div>
                   )
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </aside>
       </div>
 
@@ -943,14 +932,27 @@ export default function Planning() {
                   <div className="eyebrow" style={{marginBottom:4}}>Dates chantier</div>
                   <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>{elementSelectionne.data.reference}</div>
                 </>}
-                {!elementSelectionne && modalType === 'rdv' && <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>Nouveau rendez-vous</div>}
-                {!elementSelectionne && modalType === 'intervention' && <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>Nouvelle intervention artisan</div>}
+                {!elementSelectionne && <div style={{fontWeight:700, color:'var(--ink-900)', fontSize:15}}>Nouveau</div>}
               </div>
               <button onClick={fermerModal} style={{width:32, height:32, borderRadius:'50%', display:'grid', placeItems:'center', color:'var(--ink-500)', background:'none', border:'none', cursor:'pointer', fontSize:20, lineHeight:1}}>×</button>
             </div>
 
             <div style={{padding:24, display:'flex', flexDirection:'column', gap:16}}>
               {erreur && <div style={{background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', color:'#b91c1c', fontSize:13, padding:'8px 12px', borderRadius:8}}>{erreur}</div>}
+
+              {/* Bascule RDV / Intervention (création uniquement) */}
+              {!elementSelectionne && (
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:4, background:'var(--ink-100)', padding:3, borderRadius:9}}>
+                  {[{ k: 'rdv', l: 'Rendez-vous' }, { k: 'intervention', l: 'Intervention artisan' }].map(({ k, l }) => (
+                    <button key={k} type="button" onClick={() => basculerType(k)} style={{
+                      padding:'7px 10px', fontSize:12.5, fontWeight:600, borderRadius:7, cursor:'pointer', border:0,
+                      background: modalType === k ? '#fff' : 'transparent',
+                      color: modalType === k ? 'var(--brand-800)' : 'var(--ink-500)',
+                      boxShadow: modalType === k ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    }}>{l}</button>
+                  ))}
+                </div>
+              )}
 
               {/* Détail RDV */}
               {elementSelectionne?.type === 'rdv' && !modeEdition && (
@@ -1040,7 +1042,17 @@ export default function Planning() {
                       {dossiersRdvModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {nomCli(d.client)}</option>)}
                     </select>
                   </div>}
-{/* R4 — LE SÉLECTEUR RESTE VISIBLE MÊME SANS CALENDRIER CONFIGURÉ.
+<div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+                    <div><label className={labelCls}>Date et heure *</label><input type="datetime-local" value={formRdv.date_heure} onChange={e => setFormRdv(f => ({ ...f, date_heure: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
+                    <div><label className={labelCls}>Durée</label>
+                      <select value={formRdv.duree_minutes} onChange={e => setFormRdv(f => ({ ...f, duree_minutes: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                        <option value={30}>30 min</option><option value={60}>1h</option><option value={90}>1h30</option><option value={120}>2h</option><option value={180}>3h</option>
+                      </select>
+                    </div>
+                  </div>
+                  <PlusOptions ouvert={optionsOuvertes} force={modeEdition || cibles.length === 0} onToggle={() => setOptionsOuvertes(o => !o)}
+                    resume={resumeOptions(formRdv.cible_id, (formRdv.artisans_ids || []).length)} alerte={!cibles.some(c => c.id === formRdv.cible_id)}>
+                  {/* R4 — LE SÉLECTEUR RESTE VISIBLE MÊME SANS CALENDRIER CONFIGURÉ.
                       Auparavant `cibles.length > 0` le masquait entièrement : un compte
                       fraîchement connecté à Google voyait « connecté avec succès », créait
                       des rendez-vous, et RIEN n'arrivait dans son agenda — la route de
@@ -1059,14 +1071,6 @@ export default function Planning() {
                         <a href="/parametres" style={{color:'#92400e', fontWeight:600, textDecoration:'underline'}}>Choisir un calendrier dans Paramètres</a>
                       </div>
                     )}
-                  </div>
-                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
-                    <div><label className={labelCls}>Date et heure *</label><input type="datetime-local" value={formRdv.date_heure} onChange={e => setFormRdv(f => ({ ...f, date_heure: e.target.value }))} className={inputCls} style={{marginTop:6}}/></div>
-                    <div><label className={labelCls}>Durée</label>
-                      <select value={formRdv.duree_minutes} onChange={e => setFormRdv(f => ({ ...f, duree_minutes: e.target.value }))} className={inputCls} style={{marginTop:6}}>
-                        <option value={30}>30 min</option><option value={60}>1h</option><option value={90}>1h30</option><option value={120}>2h</option><option value={180}>3h</option>
-                      </select>
-                    </div>
                   </div>
                   {/* Entreprises conviées — PLUSIEURS depuis le 09/09. Avec un sélecteur
                       unique, une réunion de chantier à deux entreprises n'en prévenait
@@ -1118,6 +1122,7 @@ export default function Planning() {
                     })()}
                   </div>
                   <div><label className={labelCls}>Notes</label><textarea value={formRdv.notes} onChange={e => setFormRdv(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
+                  </PlusOptions>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>
                     <button onClick={() => sauvegarderRdv()} disabled={(!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving} className="btn btn-primary" style={{flex:1, opacity: ((!formRdv.dossier_id && formRdv.type_rdv !== 'autres') || !formRdv.date_heure || saving) ? 0.5 : 1}}>
@@ -1140,25 +1145,15 @@ export default function Planning() {
                     <div style={{marginTop:6, fontSize:13, color:'var(--ink-700)'}}>{agences[0].nom}</div>
                   </div>}
                   {!modeEdition && <div><label className={labelCls}>Chantier *</label>
-                    <select value={formIntervention.dossier_id} onChange={e => setFormIntervention(f => ({ ...f, dossier_id: e.target.value, artisan_id: '' }))} className={inputCls} style={{marginTop:6}}>
+                    <select value={formIntervention.dossier_id} onChange={e => {
+                      const dossierId = e.target.value
+                      const signes = [...new Set(devis.filter(d => d.dossier_id === dossierId && d.statut === 'accepte').map(d => d.artisan_id))]
+                      setFormIntervention(f => ({ ...f, dossier_id: dossierId, artisan_id: signes.length === 1 ? signes[0] : '' }))
+                    }} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir un chantier —</option>
                       {dossiersIntModale.map(d => <option key={d.id} value={d.id}>{d.reference} — {nomCli(d.client)}</option>)}
                     </select>
                   </div>}
-                  {/* Même règle que pour les rendez-vous : jamais masqué. (R4) */}
-                  <div><label className={labelCls}>Calendrier</label>
-                    {cibles.length > 0 ? (
-                      <select value={formIntervention.cible_id} onChange={e => setFormIntervention(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
-                        <option value="">— Aucun : cette intervention ne partira dans aucun agenda —</option>
-                        {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
-                      </select>
-                    ) : (
-                      <div style={{marginTop:6, padding:'10px 12px', borderRadius:8, background:'rgba(217,119,6,0.08)', border:'1px solid rgba(217,119,6,0.3)', fontSize:12.5, color:'#92400e'}}>
-                        Aucun calendrier n&apos;est configuré : cette intervention restera dans BATILIS et n&apos;apparaîtra dans aucun agenda.{' '}
-                        <a href="/parametres" style={{color:'#92400e', fontWeight:600, textDecoration:'underline'}}>Choisir un calendrier dans Paramètres</a>
-                      </div>
-                    )}
-                  </div>
                   <div><label className={labelCls}>Artisan *</label>
                     <select value={formIntervention.artisan_id} onChange={e => setFormIntervention(f => ({ ...f, artisan_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
                       <option value="">— Choisir —</option>
@@ -1211,6 +1206,22 @@ export default function Planning() {
                       )}
                     </div>
                   )}
+                  <PlusOptions ouvert={optionsOuvertes} force={modeEdition || cibles.length === 0} onToggle={() => setOptionsOuvertes(o => !o)}
+                    resume={resumeOptions(formIntervention.cible_id, 0)} alerte={!cibles.some(c => c.id === formIntervention.cible_id)}>
+                  {/* Même règle que pour les rendez-vous : jamais masqué. (R4) */}
+                  <div><label className={labelCls}>Calendrier</label>
+                    {cibles.length > 0 ? (
+                      <select value={formIntervention.cible_id} onChange={e => setFormIntervention(f => ({ ...f, cible_id: e.target.value }))} className={inputCls} style={{marginTop:6}}>
+                        <option value="">— Aucun : cette intervention ne partira dans aucun agenda —</option>
+                        {cibles.map(c => <option key={c.id} value={c.id}>{libelleCible(c)}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{marginTop:6, padding:'10px 12px', borderRadius:8, background:'rgba(217,119,6,0.08)', border:'1px solid rgba(217,119,6,0.3)', fontSize:12.5, color:'#92400e'}}>
+                        Aucun calendrier n&apos;est configuré : cette intervention restera dans BATILIS et n&apos;apparaîtra dans aucun agenda.{' '}
+                        <a href="/parametres" style={{color:'#92400e', fontWeight:600, textDecoration:'underline'}}>Choisir un calendrier dans Paramètres</a>
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <label className={labelCls}>Horaire</label>
                     <div style={{display:'flex', alignItems:'center', gap:8, marginTop:8, marginBottom:8}}>
@@ -1229,6 +1240,7 @@ export default function Planning() {
                     )}
                   </div>
                   <div><label className={labelCls}>Notes</label><textarea value={formIntervention.notes} onChange={e => setFormIntervention(f => ({ ...f, notes: e.target.value }))} rows={2} className={inputCls} style={{marginTop:6}}/></div>
+                  </PlusOptions>
                   <div style={{display:'flex', gap:8, paddingTop:4}}>
                     <button onClick={fermerModal} className="btn btn-ghost" style={{flex:1}}>Annuler</button>
                     <button onClick={sauvegarderIntervention} disabled={(!formIntervention.dossier_id && !modeEdition) || !formIntervention.artisan_id || saving}
@@ -1257,31 +1269,6 @@ export default function Planning() {
         </ModalShell>
       )}
 
-      {/* ── QUICK MENU (clic sur une date) ─────────────────────────────────── */}
-      {quickMenu && (
-        <Portail>
-          {/* Position calculée depuis l'événement de clic, donc en coordonnées du VISIBLE :
-              sous un ancêtre transformé, ce menu s'ouvrait décalé. */}
-          <div style={{position:'fixed', inset:0, zIndex:40}} onClick={() => setQuickMenu(null)} />
-          <div className="card" style={{position:'fixed', zIndex:50, minWidth:180, overflow:'hidden', padding:0, top: quickMenu.y + 8, left: quickMenu.x}}>
-            <div className="eyebrow" style={{padding:'12px 16px 6px'}}>
-              {new Date(quickMenu.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })}
-            </div>
-            <button onClick={() => ouvrirDepuisMenu('rdv')}
-              className="row-hover"
-              style={{width:'100%', textAlign:'left', padding:'10px 16px', fontSize:13, fontWeight:500, color:'var(--ink-700)', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:10}}>
-              <span style={{width:20, height:20, borderRadius:6, display:'grid', placeItems:'center', color:'#fff', fontSize:11, fontWeight:700, background:COLORS.blue, flexShrink:0}}>R</span>
-              Rendez-vous
-            </button>
-            <button onClick={() => ouvrirDepuisMenu('intervention')}
-              className="row-hover"
-              style={{width:'100%', textAlign:'left', padding:'10px 16px', fontSize:13, fontWeight:500, color:'var(--ink-700)', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:10, borderTop:'1px solid var(--ink-100)'}}>
-              <span style={{width:20, height:20, borderRadius:6, display:'grid', placeItems:'center', color:'#fff', fontSize:11, fontWeight:700, background:COLORS.teal, flexShrink:0}}>I</span>
-              Intervention artisan
-            </button>
-          </div>
-        </Portail>
-      )}
     </div>
   )
 }
